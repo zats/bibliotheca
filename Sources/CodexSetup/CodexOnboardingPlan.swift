@@ -131,8 +131,8 @@ extension CodexOnboardingPlan {
             CodexOnboardingStep(
                 id: "ready",
                 title: "Ready",
-                detail: Self.actionDetail(snapshot.recommendedAction),
-                status: snapshot.recommendedAction == .ready ? .complete : .needsAction
+                detail: Self.readyDetail(snapshot),
+                status: Self.readyStatus(snapshot)
             ),
         ]
     }
@@ -225,6 +225,20 @@ extension CodexOnboardingPlan {
         return latestCodexUpdate.version == currentVersion ? .complete : .needsAction
     }
 
+    private static func readyDetail(_ snapshot: CodexSetupSnapshot) -> String {
+        if Self.permissionStatus(snapshot) != .complete {
+            return "Waiting for permissions"
+        }
+        return Self.actionDetail(snapshot.recommendedAction)
+    }
+
+    private static func readyStatus(_ snapshot: CodexSetupSnapshot) -> CodexOnboardingStepStatus {
+        guard Self.permissionStatus(snapshot) == .complete else {
+            return .pending
+        }
+        return snapshot.recommendedAction == .ready ? .complete : .needsAction
+    }
+
     private static func actionDetail(_ action: CodexSetupRecommendedAction) -> String {
         switch action {
         case .openCodexDownloadPage:
@@ -255,9 +269,6 @@ extension CodexOnboardingPlan {
     }
 
     private static func permissionDetail(_ snapshot: CodexSetupSnapshot) -> String {
-        if Self.isProvisionedLaunchState(snapshot), snapshot.appManagementPermissionGranted != true {
-            return "Needed for changes"
-        }
         switch snapshot.appManagementPermissionGranted {
         case true:
             return "App Management allowed"
@@ -269,13 +280,10 @@ extension CodexOnboardingPlan {
     }
 
     private static func permissionStatus(_ snapshot: CodexSetupSnapshot) -> CodexOnboardingStepStatus {
-        if Self.isProvisionedLaunchState(snapshot) {
-            return .complete
-        }
         if snapshot.appManagementPermissionGranted == true {
             return .complete
         }
-        if snapshot.extensionStoreStatus.exists && snapshot.extensionStoreStatus.allUserExtensionsDisabled && snapshot.extensionStoreStatus.requiredExtensionsEnabled {
+        if snapshot.extensionStoreStatus.exists && snapshot.extensionStoreStatus.requiredExtensionsEnabled {
             return .needsAction
         }
         return .pending

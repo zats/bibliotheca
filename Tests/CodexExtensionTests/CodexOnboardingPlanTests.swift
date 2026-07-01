@@ -231,7 +231,7 @@ struct CodexOnboardingPlanTests {
     }
 
     @Test
-    func provisionedClosedCodexCanLaunchWithEnabledExtensionsAndNoAppManagement() {
+    func provisionedClosedCodexRequiresAppManagementForMaintenance() {
         let snapshot = CodexSetupSnapshot(
             appURL: URL(filePath: "/Applications/Codex.app"),
             appIdentity: CodexAppIdentity(
@@ -255,14 +255,14 @@ struct CodexOnboardingPlanTests {
 
         let plan = CodexOnboardingPlan(snapshot: snapshot, errorMessage: nil)
 
-        #expect(plan.activeStepID == "ready")
-        #expect(plan.activeAction == .launchCodex)
+        #expect(plan.activeStepID == "permissions")
+        #expect(plan.activeAction == .openAppManagementSettings)
         #expect(plan.steps.first { $0.id == "extensions" }?.status == .complete)
-        #expect(plan.steps.first { $0.id == "permissions" }?.status == .complete)
+        #expect(plan.steps.first { $0.id == "permissions" }?.status == .needsAction)
     }
 
     @Test
-    func provisionedRunningCodexIsReadyWithEnabledExtensionsAndNoAppManagement() {
+    func provisionedRunningCodexRequiresAppManagementForMaintenance() {
         let snapshot = CodexSetupSnapshot(
             appURL: URL(filePath: "/Applications/Codex.app"),
             appIdentity: CodexAppIdentity(
@@ -286,8 +286,9 @@ struct CodexOnboardingPlanTests {
 
         let plan = CodexOnboardingPlan(snapshot: snapshot, errorMessage: nil)
 
-        #expect(plan.activeStepID == nil)
-        #expect(plan.activeAction == .ready)
+        #expect(plan.activeStepID == "permissions")
+        #expect(plan.activeAction == .openAppManagementSettings)
+        #expect(plan.steps.first { $0.id == "permissions" }?.detail == "Allow App Management")
     }
 
     @Test
