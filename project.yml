@@ -1,6 +1,7 @@
 name: CodexExtension
 options:
   bundleIdPrefix: com.zats
+  defaultSourceDirectoryType: syncedFolder
   deploymentTarget:
     macOS: "26.2"
 schemes:
@@ -30,9 +31,17 @@ targets:
     platform: macOS
     sources:
       - path: Sources/CodexSetup
+        group: Sources
+        type: syncedFolder
         excludes:
-          - Resources/BundledExtensions
+          - Resources/BundledExtensions/**
+          - Resources/BundledSkills/**
       - path: Sources/CodexSetup/Resources/BundledExtensions
+        createIntermediateGroups: true
+        type: folder
+        buildPhase: resources
+      - path: Sources/CodexSetup/Resources/BundledSkills
+        createIntermediateGroups: true
         type: folder
         buildPhase: resources
     dependencies:
@@ -56,6 +65,8 @@ targets:
     platform: macOS
     sources:
       - path: Sources/CodexExtension
+        group: Sources
+        type: syncedFolder
     dependencies:
       - target: CodexSetup
       - package: Permiso
