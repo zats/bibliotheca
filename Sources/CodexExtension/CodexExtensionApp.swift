@@ -27,10 +27,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var statusItem: NSStatusItem?
     private let setupRuntime = CodexSetupRuntime()
+    private var updateRepatchTask: Task<Void, Never>?
+    private var isAutoRepatching = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         self.installStatusItem()
+        self.startUpdateRepatchMonitor()
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(300))
             let snapshot = await self.setupRuntime.inspect(checkForUpdates: true)
@@ -42,6 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        self.updateRepatchTask?.cancel()
         if let statusItem {
             NSStatusBar.system.removeStatusItem(statusItem)
         }
@@ -73,6 +77,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         statusItem.menu = menu
         self.statusItem = statusItem
+    }
+
+    private func startUpdateRepatchMonitor() {
+        self.updateRepatchTask?.cancel()
+        self.updateRepatchTask = Task { @MainActor in
+            while !Task.isCancelled {
+                await self.repatchUpdatedCodexIfNeeded()
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
+    }
+
+    private func repatchUpdatedCodexIfNeeded() async {
+        guard !self.isAutoRepatching else {
+            return
+        }
+        self.isAutoRepatching = true
+        defer { self.isAutoRepatching = false }
+
+        do {
+            let outcome = try await self.setupRuntime.repatchUpdatedCodexIfNeeded()
+            if outcome == .needsAppManagementPermission {
+                self.openSettings()
+            }
+        } catch {
+            self.openSettings()
+        }
     }
 }
 

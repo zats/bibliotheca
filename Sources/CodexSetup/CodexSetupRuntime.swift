@@ -36,6 +36,10 @@ public struct CodexSetupRuntime: Sendable {
         try self.service.launchCodex(appURL: snapshot.appURL, appIdentity: snapshot.appIdentity)
     }
 
+    public func repatchUpdatedCodexIfNeeded(appURL: URL? = nil) async throws -> CodexUpdateRepatchOutcome {
+        try await self.service.repatchUpdatedCodexIfNeeded(selectedAppURL: appURL)
+    }
+
     public func prunePatchBackups(appURL: URL? = nil) async throws {
         let snapshot = try await self.requiredSnapshot(appURL: appURL)
         try self.service.prunePatchBackups(appURL: snapshot.appURL, appIdentity: snapshot.appIdentity)

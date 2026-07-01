@@ -266,6 +266,24 @@ struct CodexSetupService: Sendable {
         try self.appProcessController.launch(appURL: appURL)
     }
 
+    func repatchUpdatedCodexIfNeeded(selectedAppURL: URL? = nil, launchAfterPatch: Bool = true) async throws -> CodexUpdateRepatchOutcome {
+        let snapshot = await self.inspect(selectedAppURL: selectedAppURL)
+        switch CodexUpdateRepatchPolicy.plan(for: snapshot) {
+        case .none:
+            return .skipped
+        case .needsAppManagementPermission:
+            return .needsAppManagementPermission
+        case .quitPatchAndLaunch:
+            guard let appURL = snapshot.appURL, let appIdentity = snapshot.appIdentity else {
+                return .skipped
+            }
+            try self.quitCodex(appURL: appURL, appIdentity: appIdentity)
+            return try await self.patchUpdatedCodexAfterReinspection(selectedAppURL: selectedAppURL, launchAfterPatch: launchAfterPatch)
+        case .patchAndLaunch:
+            return try await self.patchUpdatedCodexAfterReinspection(selectedAppURL: selectedAppURL, launchAfterPatch: launchAfterPatch)
+        }
+    }
+
     private func patchState(appURL: URL, identity: CodexAppIdentity) -> CodexPatchState {
         guard let patched = try? self.patchInspector.isPatched(appURL: appURL) else {
             return .damagedPatchedApp
@@ -289,6 +307,32 @@ struct CodexSetupService: Sendable {
         }
 
         return .clean
+    }
+
+    private func patchUpdatedCodexAfterReinspection(selectedAppURL: URL?, launchAfterPatch: Bool) async throws -> CodexUpdateRepatchOutcome {
+        let snapshot = await self.inspect(selectedAppURL: selectedAppURL)
+        guard case .updatedAfterProvisioning = snapshot.patchState,
+              snapshot.appManagementPermissionGranted == true,
+              snapshot.isCodexRunning == false,
+              let appURL = snapshot.appURL,
+              let appIdentity = snapshot.appIdentity
+        else {
+            return CodexUpdateRepatchPolicy.plan(for: snapshot) == .needsAppManagementPermission ? .needsAppManagementPermission : .skipped
+        }
+
+        try self.patchCodex(appURL: appURL, appIdentity: appIdentity)
+        let patchedSnapshot = await self.inspect(selectedAppURL: selectedAppURL)
+        guard patchedSnapshot.patchState == .patched,
+              let patchedAppURL = patchedSnapshot.appURL,
+              let patchedAppIdentity = patchedSnapshot.appIdentity
+        else {
+            return .skipped
+        }
+        guard launchAfterPatch else {
+            return .repatched
+        }
+        try self.launchCodex(appURL: patchedAppURL, appIdentity: patchedAppIdentity)
+        return .repatchedAndLaunched
     }
 
     private func recommendedAction(

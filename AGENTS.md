@@ -6,6 +6,7 @@
 - Long-running setup actions expose in-progress state; UI must show that state with disabled controls and a spinner.
 - App mutation requires explicit App Management permission and Codex must be fully quit before patch, restore, repair, or uninstall.
 - App mutation must be idempotent. Re-running a setup action after interruption should either no-op from current disk state, clean stale staging, or complete the same intended mutation.
+- The headless setup state machine must be idempotent at every transition: every action starts by re-inspecting current disk/process/permission state, performs only the next valid mutation, and a second run after success must return a no-op state.
 - Restore must validate downloads before touching `Codex.app`, stage clean apps beside the target, and use a single replace operation for the app bundle.
 - Interrupted restore downloads must leave the installed Codex unchanged; stale temp or staging data must be safe to delete on the next run.
 - Use mature download tooling such as `aria2c` for accelerated multi-connection downloads when available; keep progress sourced from headless restore state.

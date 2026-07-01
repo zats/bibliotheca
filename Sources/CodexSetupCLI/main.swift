@@ -62,6 +62,10 @@ struct CodexSetupCLI {
             Self.printProgress("launching Codex")
             try await runtime.launchCodex(appURL: appURL)
             Swift.print("launched Codex")
+        case "auto-repatch-updated":
+            Self.printProgress("checking updated Codex")
+            let outcome = try await runtime.repatchUpdatedCodexIfNeeded(appURL: appURL)
+            Swift.print("auto-repatch: \(outcome)")
         case "prune-backups":
             Self.printProgress("pruning backups")
             try await runtime.prunePatchBackups(appURL: appURL)
@@ -151,6 +155,7 @@ struct CodexSetupCLI {
           restore-clean [--version version]
           quit-codex
           launch-codex
+          auto-repatch-updated
           prune-backups
           repair
           uninstall

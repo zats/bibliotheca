@@ -161,6 +161,32 @@ public enum CodexSetupRecommendedAction: Equatable, Sendable {
     case ready
 }
 
+public enum CodexUpdateRepatchPlan: Equatable, Sendable {
+    case none
+    case needsAppManagementPermission
+    case quitPatchAndLaunch
+    case patchAndLaunch
+}
+
+public enum CodexUpdateRepatchOutcome: Equatable, Sendable {
+    case skipped
+    case needsAppManagementPermission
+    case repatched
+    case repatchedAndLaunched
+}
+
+public struct CodexUpdateRepatchPolicy: Sendable {
+    public static func plan(for snapshot: CodexSetupSnapshot) -> CodexUpdateRepatchPlan {
+        guard case .updatedAfterProvisioning = snapshot.patchState else {
+            return .none
+        }
+        guard snapshot.appManagementPermissionGranted == true else {
+            return .needsAppManagementPermission
+        }
+        return snapshot.isCodexRunning ? .quitPatchAndLaunch : .patchAndLaunch
+    }
+}
+
 public struct CodexSetupSnapshot: Equatable, Sendable {
     public var appURL: URL?
     public var appIdentity: CodexAppIdentity?
