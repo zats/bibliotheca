@@ -157,9 +157,11 @@ struct CodexSetupService: Sendable {
             throw CodexSetupError.rollbackBackupMissing
         }
 
-        try self.appPatcher.rollback(appURL: appURL, backupDirectoryURL: backupDirectoryURL)
-        try self.fileSystem.removeItem(at: self.configuration.provisioningReceiptURL)
-        try self.backupStore.pruneAll()
+        try self.withProvisioningReceiptSuppressed {
+            try self.appPatcher.rollback(appURL: appURL, backupDirectoryURL: backupDirectoryURL)
+            try self.validateCleanCodex(appURL: appURL)
+        }
+        try self.removeProvisioningState()
     }
 
     func repairFromLatestCodex(appURL: URL, appIdentity: CodexAppIdentity) async throws {
@@ -171,9 +173,11 @@ struct CodexSetupService: Sendable {
             throw CodexSetupError.updateFeedMissing
         }
 
-        try await self.appInstaller.installCleanCodex(from: update, replacing: appURL)
-        try self.fileSystem.removeItem(at: self.configuration.provisioningReceiptURL)
-        try self.backupStore.pruneAll()
+        try await self.withProvisioningReceiptSuppressed {
+            try await self.appInstaller.installCleanCodex(from: update, replacing: appURL)
+            try self.validateCleanCodex(appURL: appURL)
+        }
+        try self.removeProvisioningState()
     }
 
     func restoreCleanCodex(
@@ -190,17 +194,21 @@ struct CodexSetupService: Sendable {
             throw CodexSetupError.appManagementPermissionRequired
         }
 
-        if update.version == appIdentity.version.shortVersion,
-           let backupDirectoryURL = self.currentRollbackBackupDirectory(appURL: appURL, appIdentity: appIdentity) {
-            await progress(CodexRestoreProgress(phase: .preparing, fraction: 0.05, detail: "Restoring saved clean Codex"))
-            try self.appPatcher.rollback(appURL: appURL, backupDirectoryURL: backupDirectoryURL)
-            await progress(CodexRestoreProgress(phase: .cleaningUp, fraction: 0.98, detail: "Cleaning up"))
-            await progress(CodexRestoreProgress(phase: .complete, fraction: 1, detail: "Restore complete"))
-        } else {
-            try await self.appInstaller.installCleanCodex(from: update, replacing: appURL, progress: progress)
+        let sameVersionBackupURL = self.currentRollbackBackupDirectory(appURL: appURL, appIdentity: appIdentity)
+        try await self.withProvisioningReceiptSuppressed {
+            if update.downloadURL == nil,
+               update.version == appIdentity.version.shortVersion,
+               let backupDirectoryURL = sameVersionBackupURL {
+                await progress(CodexRestoreProgress(phase: .preparing, fraction: 0.05, detail: "Restoring saved clean Codex"))
+                try self.appPatcher.rollback(appURL: appURL, backupDirectoryURL: backupDirectoryURL)
+                await progress(CodexRestoreProgress(phase: .cleaningUp, fraction: 0.98, detail: "Cleaning up"))
+                await progress(CodexRestoreProgress(phase: .complete, fraction: 1, detail: "Restore complete"))
+            } else {
+                try await self.appInstaller.installCleanCodex(from: update, replacing: appURL, progress: progress)
+            }
+            try self.validateCleanCodex(appURL: appURL)
         }
-        try self.fileSystem.removeItem(at: self.configuration.provisioningReceiptURL)
-        try self.backupStore.pruneAll()
+        try self.removeProvisioningState()
     }
 
     func uninstallCodexExtension(appURL: URL) throws {
@@ -212,6 +220,7 @@ struct CodexSetupService: Sendable {
         if (try? self.patchInspector.isPatched(appURL: appURL)) == true {
             try self.rollbackCodex(appURL: appURL)
         }
+        try self.removeProvisioningState()
         try self.fileSystem.removeItem(at: self.configuration.extensionsRootURL)
     }
 
@@ -407,6 +416,45 @@ struct CodexSetupService: Sendable {
         try self.fileSystem.writeData(data, to: self.configuration.provisioningReceiptURL)
         guard self.provisioningReceipt() == receipt else {
             throw CodexSetupError.provisioningReceiptInvalid
+        }
+    }
+
+    func removeProvisioningState() throws {
+        try self.fileSystem.removeItem(at: self.configuration.provisioningReceiptURL)
+        try self.backupStore.pruneAll()
+    }
+
+    private func withProvisioningReceiptSuppressed(_ work: () throws -> Void) throws {
+        let receiptData = try? self.fileSystem.readData(at: self.configuration.provisioningReceiptURL)
+        try self.fileSystem.removeItem(at: self.configuration.provisioningReceiptURL)
+
+        do {
+            try work()
+        } catch {
+            if let receiptData {
+                try? self.fileSystem.writeData(receiptData, to: self.configuration.provisioningReceiptURL)
+            }
+            throw error
+        }
+    }
+
+    private func withProvisioningReceiptSuppressed(_ work: () async throws -> Void) async throws {
+        let receiptData = try? self.fileSystem.readData(at: self.configuration.provisioningReceiptURL)
+        try self.fileSystem.removeItem(at: self.configuration.provisioningReceiptURL)
+
+        do {
+            try await work()
+        } catch {
+            if let receiptData {
+                try? self.fileSystem.writeData(receiptData, to: self.configuration.provisioningReceiptURL)
+            }
+            throw error
+        }
+    }
+
+    private func validateCleanCodex(appURL: URL) throws {
+        if (try? self.patchInspector.isPatched(appURL: appURL)) != false {
+            throw CodexSetupError.cleanRestoreStillPatched
         }
     }
 

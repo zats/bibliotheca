@@ -255,6 +255,7 @@ enum CodexSetupError: LocalizedError {
     case provisioningReceiptInvalid
     case appManagementPermissionRequired
     case codexStillRunning
+    case cleanRestoreStillPatched
 
     var errorDescription: String? {
         switch self {
@@ -286,6 +287,8 @@ enum CodexSetupError: LocalizedError {
             "Enable App Management for Codex Extension in Privacy & Security, then retry."
         case .codexStillRunning:
             "Quit Codex, then retry."
+        case .cleanRestoreStillPatched:
+            "Clean restore finished but Codex is still patched."
         }
     }
 }

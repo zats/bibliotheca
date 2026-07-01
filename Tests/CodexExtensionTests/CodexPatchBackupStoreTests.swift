@@ -53,6 +53,43 @@ struct CodexPatchBackupStoreTests {
     }
 
     @Test
+    func rejectsPatchedReceiptBackup() throws {
+        let rootURL = try Self.makeRoot()
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let fileSystem = LocalCodexSetupFileSystem()
+        let store = CodexPatchBackupStore(
+            rootURL: rootURL,
+            fileSystem: fileSystem,
+            patchInspector: CodexPatchInspector(fileSystem: fileSystem)
+        )
+        let backupURL = rootURL.appending(path: "26.1-patched", directoryHint: .isDirectory)
+        try Self.writeBackup(at: backupURL, patched: true)
+        let receipt = CodexProvisioningReceipt(
+            appPath: "/Applications/Codex.app",
+            appVersion: "26.1",
+            appASARSHA256: "patched",
+            cleanAppASARSHA256: "clean",
+            patchedAppASARSHA256: "patched",
+            backupDirectoryPath: backupURL.path,
+            provisionedAt: Date()
+        )
+
+        let matching = store.backupURL(
+            from: receipt,
+            appURL: URL(filePath: "/Applications/Codex.app", directoryHint: .isDirectory),
+            appIdentity: CodexAppIdentity(
+                bundleIdentifier: "com.openai.codex",
+                version: CodexAppVersion(shortVersion: "26.1"),
+                appASARSHA256: "patched",
+                updateFeedURL: nil
+            )
+        )
+
+        #expect(matching == nil)
+    }
+
+    @Test
     func pruneRetainingKeepsExactlyOneBackup() throws {
         let rootURL = try Self.makeRoot()
         defer { try? FileManager.default.removeItem(at: rootURL) }
@@ -99,9 +136,12 @@ struct CodexPatchBackupStoreTests {
         return rootURL
     }
 
-    private static func writeBackup(at backupURL: URL) throws {
+    private static func writeBackup(at backupURL: URL, patched: Bool = false) throws {
         try FileManager.default.createDirectory(at: backupURL, withIntermediateDirectories: true)
-        try Data("clean-asar".utf8).write(to: backupURL.appending(path: "app.asar"))
+        let asar = patched
+            ? "codex_desktop:extensions-bootloader-preload-source main bootloader failed .codex bootloader"
+            : "clean-asar"
+        try Data(asar.utf8).write(to: backupURL.appending(path: "app.asar"))
         try Data("plist".utf8).write(to: backupURL.appending(path: "Info.plist"))
     }
 }
