@@ -30,12 +30,13 @@ targets:
     type: framework
     platform: macOS
     sources:
-      - path: Sources/CodexSetup
-        group: Sources
+      - path: Sources
         type: syncedFolder
         excludes:
-          - Resources/BundledExtensions/**
-          - Resources/BundledSkills/**
+          - CodexExtension/**
+          - CodexSetupCLI/**
+          - CodexSetup/Resources/BundledExtensions/**
+          - CodexSetup/Resources/BundledSkills/**
     dependencies:
       - package: xxHash.swift
         product: xxHash
@@ -65,9 +66,11 @@ targets:
     type: application
     platform: macOS
     sources:
-      - path: Sources/CodexExtension
-        group: Sources
+      - path: Sources
         type: syncedFolder
+        excludes:
+          - CodexSetup/**
+          - CodexSetupCLI/**
     dependencies:
       - target: CodexSetup
       - package: Permiso
