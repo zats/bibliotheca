@@ -2,7 +2,8 @@
 .build/
 .swiftpm/
 .vscode/
+.docs/
 *.xcuserdata/
+*.xcodeproj/
 DerivedData/
-Bibliotheca.xcodeproj/
 Generated/
