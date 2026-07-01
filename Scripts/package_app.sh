@@ -5,13 +5,26 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONFIGURATION="${CONFIGURATION:-debug}"
 APP_NAME="Bibliotheca"
 BUNDLE_ID="${BUNDLE_ID:-com.zats.Bibliotheca}"
-VERSION="${VERSION:-0.1.0}"
-BUILD="${BUILD:-1}"
+source "$ROOT/version.env"
+VERSION="${VERSION:-$MARKETING_VERSION}"
+BUILD="${BUILD:-$BUILD_NUMBER}"
+SPARKLE_PUBLIC_KEY="${SPARKLE_PUBLIC_KEY:-Ow8SUVrNumywzYRwXp2zHI6r4cQ+QPqp2JQX+6X5AdA=}"
+FEED_URL="${FEED_URL:-https://raw.githubusercontent.com/zats/bibliotheca/main/appcast.xml}"
+CODESIGN_IDENTITY="${CODESIGN_IDENTITY:--}"
+ARCH_LIST=( ${ARCHES:-} )
+if [[ ${#ARCH_LIST[@]} -eq 0 ]]; then
+    ARCH_LIST=("$(uname -m)")
+fi
 
-swift build --configuration "$CONFIGURATION" --package-path "$ROOT"
+PRODUCT_DIR=""
+BINARIES=()
+for arch in "${ARCH_LIST[@]}"; do
+    swift build --configuration "$CONFIGURATION" --arch "$arch" --package-path "$ROOT" >&2
+    bin_dir="$(swift build --show-bin-path --configuration "$CONFIGURATION" --arch "$arch" --package-path "$ROOT" | tail -n 1)"
+    PRODUCT_DIR="${PRODUCT_DIR:-$bin_dir}"
+    BINARIES+=("$bin_dir/Bibliotheca")
+done
 
-BIN="$ROOT/.build/$CONFIGURATION/Bibliotheca"
-PRODUCT_DIR="$(cd "$(dirname "$BIN")" && pwd -P)"
 APP="$ROOT/.build/$CONFIGURATION/$APP_NAME.app"
 CONTENTS="$APP/Contents"
 MACOS="$CONTENTS/MacOS"
@@ -21,7 +34,12 @@ SPARKLE_FRAMEWORK="$(find "$ROOT/.build" -path '*/Sparkle.framework' -type d | h
 
 trash "$APP" 2>/dev/null || true
 mkdir -p "$MACOS" "$FRAMEWORKS" "$RESOURCES"
-cp "$BIN" "$MACOS/Bibliotheca"
+if [[ ${#BINARIES[@]} -gt 1 ]]; then
+    lipo -create "${BINARIES[@]}" -output "$MACOS/Bibliotheca"
+else
+    cp "${BINARIES[0]}" "$MACOS/Bibliotheca"
+fi
+chmod +x "$MACOS/Bibliotheca"
 ditto "$SPARKLE_FRAMEWORK" "$FRAMEWORKS/Sparkle.framework"
 find "$PRODUCT_DIR" -maxdepth 1 -type d -name '*.bundle' -print0 |
     while IFS= read -r -d '' bundle; do
@@ -51,10 +69,22 @@ cat > "$CONTENTS/Info.plist" <<PLIST
     <string>26.2</string>
     <key>LSUIElement</key>
     <true/>
+    <key>SUFeedURL</key>
+    <string>$FEED_URL</string>
+    <key>SUPublicEDKey</key>
+    <string>$SPARKLE_PUBLIC_KEY</string>
+    <key>SUEnableAutomaticChecks</key>
+    <true/>
+    <key>SUAutomaticallyUpdate</key>
+    <false/>
 </dict>
 </plist>
 PLIST
 
-codesign --force --deep --sign - "$APP" >/dev/null
+if [[ "$CODESIGN_IDENTITY" == "-" ]]; then
+    codesign --force --deep --sign - "$APP" >/dev/null
+else
+    codesign --force --deep --timestamp --options runtime --sign "$CODESIGN_IDENTITY" "$APP" >/dev/null
+fi
 
 echo "$APP"

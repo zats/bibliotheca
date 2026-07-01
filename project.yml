@@ -89,6 +89,10 @@ targets:
         CFBundleVersion: "1"
         LSMinimumSystemVersion: "26.2"
         LSUIElement: true
+        SUFeedURL: https://raw.githubusercontent.com/zats/bibliotheca/main/appcast.xml
+        SUPublicEDKey: Ow8SUVrNumywzYRwXp2zHI6r4cQ+QPqp2JQX+6X5AdA=
+        SUEnableAutomaticChecks: true
+        SUAutomaticallyUpdate: false
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: com.zats.Bibliotheca
       PRODUCT_NAME: Bibliotheca
