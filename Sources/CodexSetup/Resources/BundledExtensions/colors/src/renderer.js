@@ -140,6 +140,16 @@ function activate(context) {
       [data-codex-colors-header-button="tint"]:hover {
         background: color-mix(in srgb, var(--codex-colors-header-bg) 88%, var(--codex-colors-header-fg)) !important;
       }
+      [data-codex-colors-header-fg="true"] .to-token-main-surface-primary,
+      [data-codex-colors-header-fg="true"].to-token-main-surface-primary {
+        --tw-gradient-to: var(--app-shell-tab-background, var(--codex-colors-header-bg)) !important;
+      }
+      [data-codex-colors-header-fg="true"] .before\\:to-token-main-surface-primary::before,
+      [data-codex-colors-header-fg="true"].before\\:to-token-main-surface-primary::before,
+      [data-codex-colors-header-fg="true"] .after\\:to-token-main-surface-primary::after,
+      [data-codex-colors-header-fg="true"].after\\:to-token-main-surface-primary::after {
+        --tw-gradient-to: var(--app-shell-tab-background, var(--codex-colors-header-bg)) !important;
+      }
       [data-codex-colors-header-underlay="true"] {
         position: absolute;
         top: 0;
