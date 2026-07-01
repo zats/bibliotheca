@@ -13,10 +13,37 @@ function activate(context) {
     return (node?.textContent || "").trim();
   }
 
+  function localExtensionRow(extension) {
+    return {
+      ...extension,
+      installed: true,
+      installedVersion: extension.version ?? null,
+      latestVersion: null,
+      updateAvailable: false,
+      canInstall: false,
+      canUpdate: false,
+      canUninstall: true,
+      autoUpdate: false,
+    };
+  }
+
+  async function loadLocalExtensions() {
+    const result = await bridge?.codexExtensionsList?.();
+    const rows = Array.isArray(result?.extensions) ? result.extensions : [];
+    return rows
+      .filter((extension) => extension.id !== "extensions-manager" && !extension.internal)
+      .map(localExtensionRow);
+  }
+
   async function loadExtensions(options = {}) {
     if (state.loading) return;
     state.loading = true;
     state.error = null;
+    if (!state.rows) {
+      try {
+        state.rows = await loadLocalExtensions();
+      } catch {}
+    }
     renderExtensionsPage();
     try {
       const result = options.checkUpdates
@@ -36,6 +63,8 @@ function activate(context) {
     if (!document.querySelector("input[placeholder^='Search settings'], input[aria-label*='Search settings']")) {
       return null;
     }
+    const existing = document.querySelector("[data-codex-extensions-content-root='true']");
+    if (existing) return existing;
     const headings = Array.from(document.querySelectorAll("h1, h2, [class*='heading']"))
       .filter((element) => {
         const text = textOf(element);
@@ -263,6 +292,7 @@ function activate(context) {
       state.extensionsView = false;
       return;
     }
+    root.dataset.codexExtensionsContentRoot = "true";
     root.textContent = "";
     const scroller = document.createElement("div");
     scroller.className = "scrollbar-stable flex-1 overflow-y-auto p-panel";
