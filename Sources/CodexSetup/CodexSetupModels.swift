@@ -226,6 +226,7 @@ enum CodexSetupError: LocalizedError {
     case patchPatternMissing(String)
     case processFailed(executable: String, status: Int32, output: String)
     case rollbackBackupMissing
+    case provisioningReceiptInvalid
     case appManagementPermissionRequired
     case codexStillRunning
 
@@ -253,6 +254,8 @@ enum CodexSetupError: LocalizedError {
             "\(executable) failed with status \(status): \(output)"
         case .rollbackBackupMissing:
             "Rollback backup is missing."
+        case .provisioningReceiptInvalid:
+            "Provisioning receipt could not be saved."
         case .appManagementPermissionRequired:
             "Enable App Management for Codex Extension in Privacy & Security, then retry."
         case .codexStillRunning:

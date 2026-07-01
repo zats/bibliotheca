@@ -10,6 +10,7 @@ struct CodexSetupService: Sendable {
     private let appProcessController: CodexAppProcessController
     private let extensionStoreInstaller: CodexExtensionStoreInstaller
     private let updateChecker: CodexUpdateChecker
+    private let backupStore: CodexPatchBackupStore
 
     init(
         configuration: CodexSetupConfiguration = .liveDefault(),
@@ -19,12 +20,18 @@ struct CodexSetupService: Sendable {
         self.configuration = configuration
         self.fileSystem = fileSystem
         self.bundleInspector = CodexAppBundleInspector(fileSystem: fileSystem)
-        self.patchInspector = CodexPatchInspector(fileSystem: fileSystem)
+        let patchInspector = CodexPatchInspector(fileSystem: fileSystem)
+        self.patchInspector = patchInspector
         self.appPatcher = CodexAppPatcher(fileSystem: fileSystem)
         self.appInstaller = CodexAppInstaller(fileSystem: fileSystem)
         self.appProcessController = CodexAppProcessController()
         self.extensionStoreInstaller = CodexExtensionStoreInstaller(fileSystem: fileSystem)
         self.updateChecker = updateChecker
+        self.backupStore = CodexPatchBackupStore(
+            rootURL: configuration.extensionsRootURL.appending(path: ".codex-extension-backups", directoryHint: .isDirectory),
+            fileSystem: fileSystem,
+            patchInspector: patchInspector
+        )
     }
 
     func inspect(selectedAppURL: URL? = nil, checkForUpdates: Bool = false) async -> CodexSetupSnapshot {
@@ -104,8 +111,7 @@ struct CodexSetupService: Sendable {
             backupDirectoryPath: nil,
             provisionedAt: date
         )
-        let data = try JSONEncoder().encode(receipt)
-        try self.fileSystem.writeData(data, to: self.configuration.provisioningReceiptURL)
+        try self.writeProvisioningReceipt(receipt)
     }
 
     func patchCodex(appURL: URL, appIdentity: CodexAppIdentity) throws {
@@ -115,13 +121,16 @@ struct CodexSetupService: Sendable {
         try self.installBundledExtensionsDisabled(for: appIdentity)
 
         if (try? self.patchInspector.isPatched(appURL: appURL)) == true {
+            if let backupDirectoryURL = self.currentRollbackBackupDirectory(appURL: appURL, appIdentity: appIdentity) {
+                try self.backupStore.pruneRetaining(backupDirectoryURL)
+            }
             return
         }
 
         let result = try self.appPatcher.patch(
             appURL: appURL,
             appVersion: appIdentity.version.shortVersion,
-            backupRootURL: self.configuration.extensionsRootURL.appending(path: ".codex-extension-backups", directoryHint: .isDirectory)
+            backupRootURL: self.backupStore.rootURL
         )
         let receipt = CodexProvisioningReceipt(
             appPath: appURL.path,
@@ -132,8 +141,8 @@ struct CodexSetupService: Sendable {
             backupDirectoryPath: result.backupDirectoryURL.path,
             provisionedAt: Date()
         )
-        let data = try JSONEncoder().encode(receipt)
-        try self.fileSystem.writeData(data, to: self.configuration.provisioningReceiptURL)
+        try self.writeProvisioningReceipt(receipt)
+        try self.backupStore.pruneRetaining(result.backupDirectoryURL)
     }
 
     func rollbackCodex(appURL: URL) throws {
@@ -142,12 +151,15 @@ struct CodexSetupService: Sendable {
             throw CodexSetupError.codexStillRunning
         }
 
-        guard let backupDirectoryURL = self.cleanRollbackBackupDirectory(appIdentity: identity) else {
+        guard let identity,
+              let backupDirectoryURL = self.currentRollbackBackupDirectory(appURL: appURL, appIdentity: identity)
+        else {
             throw CodexSetupError.rollbackBackupMissing
         }
 
         try self.appPatcher.rollback(appURL: appURL, backupDirectoryURL: backupDirectoryURL)
         try self.fileSystem.removeItem(at: self.configuration.provisioningReceiptURL)
+        try self.backupStore.pruneAll()
     }
 
     func repairFromLatestCodex(appURL: URL, appIdentity: CodexAppIdentity) async throws {
@@ -161,6 +173,7 @@ struct CodexSetupService: Sendable {
 
         try await self.appInstaller.installCleanCodex(from: update, replacing: appURL)
         try self.fileSystem.removeItem(at: self.configuration.provisioningReceiptURL)
+        try self.backupStore.pruneAll()
     }
 
     func restoreCleanCodex(
@@ -177,8 +190,17 @@ struct CodexSetupService: Sendable {
             throw CodexSetupError.appManagementPermissionRequired
         }
 
-        try await self.appInstaller.installCleanCodex(from: update, replacing: appURL, progress: progress)
+        if update.version == appIdentity.version.shortVersion,
+           let backupDirectoryURL = self.currentRollbackBackupDirectory(appURL: appURL, appIdentity: appIdentity) {
+            await progress(CodexRestoreProgress(phase: .preparing, fraction: 0.05, detail: "Restoring saved clean Codex"))
+            try self.appPatcher.rollback(appURL: appURL, backupDirectoryURL: backupDirectoryURL)
+            await progress(CodexRestoreProgress(phase: .cleaningUp, fraction: 0.98, detail: "Cleaning up"))
+            await progress(CodexRestoreProgress(phase: .complete, fraction: 1, detail: "Restore complete"))
+        } else {
+            try await self.appInstaller.installCleanCodex(from: update, replacing: appURL, progress: progress)
+        }
         try self.fileSystem.removeItem(at: self.configuration.provisioningReceiptURL)
+        try self.backupStore.pruneAll()
     }
 
     func uninstallCodexExtension(appURL: URL) throws {
@@ -201,8 +223,40 @@ struct CodexSetupService: Sendable {
         try await self.updateChecker.availableUpdates(feedURL: self.updateFeedURL(for: appIdentity))
     }
 
+    func availableRestoreOptions(appURL: URL, appIdentity: CodexAppIdentity) async throws -> [CodexRestoreOption] {
+        let localBackupURL = self.currentRollbackBackupDirectory(appURL: appURL, appIdentity: appIdentity)
+        let updates: [CodexUpdateInfo]
+        do {
+            updates = try await self.availableCodexUpdates(for: appIdentity)
+        } catch {
+            guard localBackupURL != nil else {
+                throw error
+            }
+            updates = []
+        }
+
+        var options = updates.enumerated().map { index, update in
+            CodexRestoreOption(version: update.version, downloadURL: update.downloadURL, isLatest: index == 0)
+        }
+
+        if localBackupURL != nil,
+           !options.contains(where: { $0.version == appIdentity.version.shortVersion }) {
+            options.insert(CodexRestoreOption(version: appIdentity.version.shortVersion, downloadURL: nil, isLatest: options.isEmpty), at: 0)
+        }
+
+        return options
+    }
+
     func quitCodex(appURL: URL, appIdentity: CodexAppIdentity) throws {
         try self.appProcessController.quit(appURL: appURL, bundleIdentifier: appIdentity.bundleIdentifier)
+    }
+
+    func prunePatchBackups(appURL: URL, appIdentity: CodexAppIdentity) throws {
+        if let backupDirectoryURL = self.currentRollbackBackupDirectory(appURL: appURL, appIdentity: appIdentity) {
+            try self.backupStore.pruneRetaining(backupDirectoryURL)
+        } else if (try? self.patchInspector.isPatched(appURL: appURL)) == false {
+            try self.backupStore.pruneAll()
+        }
     }
 
     func launchCodex(appURL: URL, appIdentity: CodexAppIdentity) throws {
@@ -304,41 +358,19 @@ struct CodexSetupService: Sendable {
         return try? JSONDecoder().decode(CodexProvisioningReceipt.self, from: data)
     }
 
-    private func cleanRollbackBackupDirectory(appIdentity: CodexAppIdentity?) -> URL? {
-        if let receipt = self.provisioningReceipt(),
-           let backupDirectoryPath = receipt.backupDirectoryPath {
-            let backupURL = URL(filePath: backupDirectoryPath, directoryHint: .isDirectory)
-            if self.isCleanBackup(backupURL) {
-                return backupURL
-            }
+    private func writeProvisioningReceipt(_ receipt: CodexProvisioningReceipt) throws {
+        let data = try JSONEncoder().encode(receipt)
+        try self.fileSystem.writeData(data, to: self.configuration.provisioningReceiptURL)
+        guard self.provisioningReceipt() == receipt else {
+            throw CodexSetupError.provisioningReceiptInvalid
         }
-
-        let backupRootURL = self.configuration.extensionsRootURL.appending(path: ".codex-extension-backups", directoryHint: .isDirectory)
-        guard let backups = try? self.fileSystem.contentsOfDirectory(at: backupRootURL) else {
-            return nil
-        }
-
-        let versionPrefix = appIdentity.map { "\($0.version.shortVersion)-" }
-        return backups
-            .filter { self.fileSystem.directoryExists(at: $0) }
-            .filter { backupURL in
-                versionPrefix.map { backupURL.lastPathComponent.hasPrefix($0) } ?? true
-            }
-            .filter(self.isCleanBackup)
-            .sorted { $0.lastPathComponent < $1.lastPathComponent }
-            .first
     }
 
-    private func isCleanBackup(_ backupURL: URL) -> Bool {
-        let asarURL = backupURL.appending(path: "app.asar")
-        let infoURL = backupURL.appending(path: "Info.plist")
-        guard self.fileSystem.fileExists(at: asarURL),
-              self.fileSystem.fileExists(at: infoURL),
-              let patched = try? self.patchInspector.isPatchedASAR(at: asarURL)
-        else {
-            return false
+    private func currentRollbackBackupDirectory(appURL: URL, appIdentity: CodexAppIdentity) -> URL? {
+        guard let receipt = self.provisioningReceipt() else {
+            return nil
         }
-        return !patched
+        return self.backupStore.backupURL(from: receipt, appURL: appURL, appIdentity: appIdentity)
     }
 
     private func updateFeedURL(for appIdentity: CodexAppIdentity) -> URL? {

@@ -36,6 +36,11 @@ public struct CodexSetupRuntime: Sendable {
         try self.service.launchCodex(appURL: snapshot.appURL, appIdentity: snapshot.appIdentity)
     }
 
+    public func prunePatchBackups(appURL: URL? = nil) async throws {
+        let snapshot = try await self.requiredSnapshot(appURL: appURL)
+        try self.service.prunePatchBackups(appURL: snapshot.appURL, appIdentity: snapshot.appIdentity)
+    }
+
     public func repairFromLatestCodex(appURL: URL? = nil) async throws {
         let snapshot = try await self.requiredSnapshot(appURL: appURL, checkForUpdates: true)
         try await self.service.repairFromLatestCodex(appURL: snapshot.appURL, appIdentity: snapshot.appIdentity)
@@ -43,10 +48,7 @@ public struct CodexSetupRuntime: Sendable {
 
     public func availableRestoreOptions(appURL: URL? = nil) async throws -> [CodexRestoreOption] {
         let snapshot = try await self.requiredSnapshot(appURL: appURL)
-        let updates = try await self.service.availableCodexUpdates(for: snapshot.appIdentity)
-        return updates.enumerated().map { index, update in
-            CodexRestoreOption(version: update.version, downloadURL: update.downloadURL, isLatest: index == 0)
-        }
+        return try await self.service.availableRestoreOptions(appURL: snapshot.appURL, appIdentity: snapshot.appIdentity)
     }
 
     public func restoreCleanCodex(

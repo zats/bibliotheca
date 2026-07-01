@@ -29,41 +29,46 @@ struct CodexAppPatcher: Sendable {
         try self.fileSystem.writeData(try self.fileSystem.readData(at: asarURL), to: backupURL.appending(path: "app.asar"))
         try self.fileSystem.writeData(try self.fileSystem.readData(at: infoURL), to: backupURL.appending(path: "Info.plist"))
 
-        let temporaryRoot = try self.makeTemporaryDirectory()
-        defer { try? self.fileSystem.removeItem(at: temporaryRoot) }
+        do {
+            let temporaryRoot = try self.makeTemporaryDirectory()
+            defer { try? self.fileSystem.removeItem(at: temporaryRoot) }
 
-        let extractURL = temporaryRoot.appending(path: "extract", directoryHint: .isDirectory)
-        let patchedAsarURL = temporaryRoot.appending(path: "app.asar")
-        let patchedInfoURL = temporaryRoot.appending(path: "Info.plist")
-        try self.fileSystem.createDirectory(at: extractURL)
+            let extractURL = temporaryRoot.appending(path: "extract", directoryHint: .isDirectory)
+            let patchedAsarURL = temporaryRoot.appending(path: "app.asar")
+            let patchedInfoURL = temporaryRoot.appending(path: "Info.plist")
+            try self.fileSystem.createDirectory(at: extractURL)
 
-        let asar = try self.toolLocator.asarCommand()
-        _ = try self.runAsar(asar, arguments: ["extract", asarURL.path, extractURL.path])
-        try self.patchPreload(in: extractURL, appVersion: appVersion)
-        try self.patchMain(in: extractURL)
-        _ = try self.runAsar(asar, arguments: ["pack", extractURL.path, patchedAsarURL.path])
-        try self.fileSystem.writeData(
-            try self.electronAsarIntegrityInfoData(infoURL: infoURL, asarURL: patchedAsarURL),
-            to: patchedInfoURL
-        )
+            let asar = try self.toolLocator.asarCommand()
+            _ = try self.runAsar(asar, arguments: ["extract", asarURL.path, extractURL.path])
+            try self.patchPreload(in: extractURL, appVersion: appVersion)
+            try self.patchMain(in: extractURL)
+            _ = try self.runAsar(asar, arguments: ["pack", extractURL.path, patchedAsarURL.path])
+            try self.fileSystem.writeData(
+                try self.electronAsarIntegrityInfoData(infoURL: infoURL, asarURL: patchedAsarURL),
+                to: patchedInfoURL
+            )
 
-        try self.installFilesAndSign(
-            files: [
-                (source: patchedAsarURL, destination: asarURL),
-                (source: patchedInfoURL, destination: infoURL),
-            ],
-            appURL: appURL,
-            rollbackFiles: [
-                (source: backupURL.appending(path: "app.asar"), destination: asarURL),
-                (source: backupURL.appending(path: "Info.plist"), destination: infoURL),
-            ]
-        )
+            try self.installFilesAndSign(
+                files: [
+                    (source: patchedAsarURL, destination: asarURL),
+                    (source: patchedInfoURL, destination: infoURL),
+                ],
+                appURL: appURL,
+                rollbackFiles: [
+                    (source: backupURL.appending(path: "app.asar"), destination: asarURL),
+                    (source: backupURL.appending(path: "Info.plist"), destination: infoURL),
+                ]
+            )
 
-        return CodexPatchResult(
-            cleanAppASARSHA256: cleanHash,
-            patchedAppASARSHA256: try self.sha256(at: asarURL),
-            backupDirectoryURL: backupURL
-        )
+            return CodexPatchResult(
+                cleanAppASARSHA256: cleanHash,
+                patchedAppASARSHA256: try self.sha256(at: asarURL),
+                backupDirectoryURL: backupURL
+            )
+        } catch {
+            try? self.fileSystem.removeItem(at: backupURL)
+            throw error
+        }
     }
 
     func rollback(appURL: URL, backupDirectoryURL: URL) throws {
