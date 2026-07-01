@@ -1,20 +1,20 @@
-name: CodexExtension
+name: Bibliotheca
 options:
   bundleIdPrefix: com.zats
   defaultSourceDirectoryType: syncedFolder
   deploymentTarget:
     macOS: "26.2"
 schemes:
-  Codex Extension:
+  Bibliotheca:
     build:
       targets:
-        Codex Extension: all
+        Bibliotheca: all
     run:
       config: Debug
-  CodexSetup:
+  BibliothecaSetup:
     build:
       targets:
-        CodexSetup: all
+        BibliothecaSetup: all
 packages:
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
@@ -26,17 +26,17 @@ packages:
     url: https://github.com/tesseract-one/xxHash.swift
     from: 0.1.0
 targets:
-  CodexSetup:
+  BibliothecaSetup:
     type: framework
     platform: macOS
     sources:
       - path: Sources
         type: syncedFolder
         excludes:
-          - CodexExtension/**
-          - CodexSetupCLI/**
-          - CodexSetup/Resources/BundledExtensions/**
-          - CodexSetup/Resources/BundledSkills/**
+          - Bibliotheca/**
+          - BibliothecaSetupCLI/**
+          - BibliothecaSetup/Resources/BundledExtensions/**
+          - BibliothecaSetup/Resources/BundledSkills/**
     dependencies:
       - package: xxHash.swift
         product: xxHash
@@ -47,50 +47,50 @@ targets:
           set -euo pipefail
           resources_dir="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH"
           mkdir -p "$resources_dir"
-          ditto "$SRCROOT/Sources/CodexSetup/Resources/BundledExtensions" "$resources_dir/BundledExtensions"
-          ditto "$SRCROOT/Sources/CodexSetup/Resources/BundledSkills" "$resources_dir/BundledSkills"
+          ditto "$SRCROOT/Sources/BibliothecaSetup/Resources/BundledExtensions" "$resources_dir/BundledExtensions"
+          ditto "$SRCROOT/Sources/BibliothecaSetup/Resources/BundledSkills" "$resources_dir/BundledSkills"
     info:
-      path: Generated/CodexSetup-Info.plist
+      path: Generated/BibliothecaSetup-Info.plist
       properties:
         CFBundleExecutable: $(EXECUTABLE_NAME)
         CFBundleIdentifier: $(PRODUCT_BUNDLE_IDENTIFIER)
-        CFBundleName: CodexSetup
+        CFBundleName: BibliothecaSetup
         CFBundlePackageType: FMWK
         CFBundleShortVersionString: 0.1.0
         CFBundleVersion: "1"
     settings:
-      PRODUCT_BUNDLE_IDENTIFIER: com.zats.CodexExtension.CodexSetup
+      PRODUCT_BUNDLE_IDENTIFIER: com.zats.Bibliotheca.BibliothecaSetup
       SWIFT_STRICT_CONCURRENCY: complete
       SWIFT_UPCOMING_FEATURE_STRICT_CONCURRENCY: YES
-  Codex Extension:
+  Bibliotheca:
     type: application
     platform: macOS
     sources:
       - path: Sources
         type: syncedFolder
         excludes:
-          - CodexSetup/**
-          - CodexSetupCLI/**
+          - BibliothecaSetup/**
+          - BibliothecaSetupCLI/**
     dependencies:
-      - target: CodexSetup
+      - target: BibliothecaSetup
       - package: Permiso
         product: Permiso
       - package: Sparkle
         product: Sparkle
     info:
-      path: Generated/CodexExtension-Info.plist
+      path: Generated/Bibliotheca-Info.plist
       properties:
         CFBundleExecutable: $(EXECUTABLE_NAME)
         CFBundleIdentifier: $(PRODUCT_BUNDLE_IDENTIFIER)
-        CFBundleName: Codex Extension
-        CFBundleDisplayName: Codex Extension
+        CFBundleName: Bibliotheca
+        CFBundleDisplayName: Bibliotheca
         CFBundlePackageType: APPL
         CFBundleShortVersionString: 0.1.0
         CFBundleVersion: "1"
         LSMinimumSystemVersion: "26.2"
         LSUIElement: true
     settings:
-      PRODUCT_BUNDLE_IDENTIFIER: com.zats.CodexExtension
-      PRODUCT_NAME: Codex Extension
+      PRODUCT_BUNDLE_IDENTIFIER: com.zats.Bibliotheca
+      PRODUCT_NAME: Bibliotheca
       SWIFT_STRICT_CONCURRENCY: complete
       SWIFT_UPCOMING_FEATURE_STRICT_CONCURRENCY: YES

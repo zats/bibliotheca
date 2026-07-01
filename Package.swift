@@ -2,15 +2,15 @@
 import PackageDescription
 
 let package = Package(
-    name: "CodexExtension",
+    name: "Bibliotheca",
     defaultLocalization: "en",
     platforms: [
         .macOS(.v26),
     ],
     products: [
-        .executable(name: "CodexExtension", targets: ["CodexExtension"]),
-        .executable(name: "codex-extension-setup", targets: ["CodexSetupCLI"]),
-        .library(name: "CodexSetup", targets: ["CodexSetup"]),
+        .executable(name: "Bibliotheca", targets: ["Bibliotheca"]),
+        .executable(name: "bibliotheca-setup", targets: ["BibliothecaSetupCLI"]),
+        .library(name: "BibliothecaSetup", targets: ["BibliothecaSetup"]),
     ],
     dependencies: [
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.3"),
@@ -19,9 +19,9 @@ let package = Package(
     ],
     targets: [
         .executableTarget(
-            name: "CodexExtension",
+            name: "Bibliotheca",
             dependencies: [
-                "CodexSetup",
+                "BibliothecaSetup",
                 .product(name: "Permiso", package: "Permiso"),
                 .product(name: "Sparkle", package: "Sparkle"),
             ],
@@ -29,7 +29,7 @@ let package = Package(
                 .enableUpcomingFeature("StrictConcurrency"),
             ]),
         .target(
-            name: "CodexSetup",
+            name: "BibliothecaSetup",
             dependencies: [
                 .product(name: "xxHash", package: "xxHash.swift"),
             ],
@@ -41,13 +41,13 @@ let package = Package(
                 .enableUpcomingFeature("StrictConcurrency"),
             ]),
         .executableTarget(
-            name: "CodexSetupCLI",
-            dependencies: ["CodexSetup"],
+            name: "BibliothecaSetupCLI",
+            dependencies: ["BibliothecaSetup"],
             swiftSettings: [
                 .enableUpcomingFeature("StrictConcurrency"),
             ]),
         .testTarget(
-            name: "CodexExtensionTests",
-            dependencies: ["CodexSetup"]
+            name: "BibliothecaTests",
+            dependencies: ["BibliothecaSetup"]
         ),
     ])

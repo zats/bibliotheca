@@ -1,6 +1,6 @@
-# Codex Extension Principles
+# Bibliotheca Principles
 
-- Keep setup logic headless in `CodexSetup`; SwiftUI only renders state, binds controls, and triggers headless actions.
+- Keep setup logic headless in `BibliothecaSetup`; SwiftUI only renders state, binds controls, and triggers headless actions.
 - Do not use global singletons for business logic. Pass state through runtime, service, and session boundaries.
 - Every setup step must have a clear state, a clear action, and a recoverable error path.
 - Long-running setup actions expose in-progress state; UI must show that state with disabled controls and a spinner.
