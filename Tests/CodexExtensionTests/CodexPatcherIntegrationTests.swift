@@ -48,9 +48,11 @@ struct CodexPatcherIntegrationTests {
 
         #expect(try inspector.isPatched(appURL: appURL))
         let activation = try Self.mainActivationSnippet(in: appURL)
-        #expect(activation.contains("__codexextActivateMain({electron:"))
-        #expect(!activation.contains("electron:this"))
-        #expect(!activation.contains("appVersion:this.app.getVersion()"))
+        #expect(activation.contains(".codex`,`extensions`,`bootloader`,`src`,`main.js`"))
+        #expect(activation.contains("activate({electron:__e,appVersion:__e.app.getVersion()})"))
+        #expect(!activation.contains("windowServices"))
+        #expect(!activation.contains("getAppServerConnection"))
+        #expect(!activation.contains("query-cache-invalidate"))
 
         try patcher.rollback(appURL: appURL, backupDirectoryURL: result.backupDirectoryURL)
         #expect(try !inspector.isPatched(appURL: appURL))
@@ -75,9 +77,9 @@ struct CodexPatcherIntegrationTests {
         let buildURL = rootURL.appending(path: ".vite/build", directoryHint: .isDirectory)
         for fileURL in try FileManager.default.contentsOfDirectory(at: buildURL, includingPropertiesForKeys: nil) where fileURL.pathExtension == "js" {
             let source = try String(contentsOf: fileURL, encoding: .utf8)
-            if let range = source.range(of: "__codexextActivateMain({") {
+            if let range = source.range(of: ".codex`,`extensions`,`bootloader`,`src`,`main.js`") {
                 let lower = range.lowerBound
-                let upper = source[range.upperBound...].range(of: "});")?.upperBound ?? source.index(range.upperBound, offsetBy: 400, limitedBy: source.endIndex) ?? source.endIndex
+                let upper = source[range.upperBound...].range(of: "})();")?.upperBound ?? source.index(range.upperBound, offsetBy: 400, limitedBy: source.endIndex) ?? source.endIndex
                 return String(source[lower..<upper])
             }
         }

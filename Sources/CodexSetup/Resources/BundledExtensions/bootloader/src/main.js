@@ -120,28 +120,69 @@ function appBundlePath() {
   }
 }
 
+function bootloaderRuntime() {
+  const key = "__codexExtensionsBootloaderRuntime";
+  const previous = globalThis[key];
+  if (previous?.cleanup) {
+    for (const cleanup of previous.cleanup) {
+      try {
+        cleanup();
+      } catch {}
+    }
+  }
+  const runtime = { cleanup: new Set() };
+  globalThis[key] = runtime;
+  return {
+    add(cleanup) {
+      if (typeof cleanup === "function") runtime.cleanup.add(cleanup);
+    },
+  };
+}
+
+function isTrustedIpcEvent(event) {
+  const url = event?.senderFrame?.url || event?.sender?.getURL?.() || "";
+  return url.startsWith("file://") || url.startsWith("app://") || url.startsWith("codex://");
+}
+
+function reloadWindowsSoon(electron, delay = 250) {
+  setTimeout(() => {
+    try {
+      for (const window of electron.BrowserWindow.getAllWindows()) {
+        window.webContents.reloadIgnoringCache();
+      }
+    } catch {}
+  }, delay);
+}
+
 function activate(context) {
   const electron = context.electron;
   const appVersion = context.appVersion;
+  const cleanup = bootloaderRuntime();
+  const extensionContext = {
+    ...context,
+    isTrustedIpcEvent,
+    cleanup,
+    reloadWindowsSoon: (delay) => reloadWindowsSoon(electron, delay),
+  };
   const runtimeModulesHandler = (event) => {
-    event.returnValue = context.isTrustedIpcEvent(event) ? runtimeModules(appVersion) : [];
+    event.returnValue = isTrustedIpcEvent(event) ? runtimeModules(appVersion) : [];
   };
   const bootloaderPreloadHandler = (event) => {
-    event.returnValue = context.isTrustedIpcEvent(event) ? bootloaderPreloadSource() : null;
+    event.returnValue = isTrustedIpcEvent(event) ? bootloaderPreloadSource() : null;
   };
 
   electron.ipcMain.on("codex_desktop:extensions-bootloader-preload-source", bootloaderPreloadHandler);
   electron.ipcMain.handle("codex_desktop:extensions-list", async (event) =>
-    context.isTrustedIpcEvent(event)
+    isTrustedIpcEvent(event)
       ? { extensions: discover(appVersion).map(publicExtension) }
       : { extensions: [] },
   );
   electron.ipcMain.handle("codex_desktop:extensions-set-enabled", async (event, id, enabled) => {
-    if (!context.isTrustedIpcEvent(event)) throw Error("Untrusted sender");
+    if (!isTrustedIpcEvent(event)) throw Error("Untrusted sender");
     return setEnabled(id, enabled, appVersion);
   });
   electron.ipcMain.handle("codex_desktop:extensions-confirm-reload", async (event) => {
-    if (!context.isTrustedIpcEvent(event)) throw Error("Untrusted sender");
+    if (!isTrustedIpcEvent(event)) throw Error("Untrusted sender");
     const window = electron.BrowserWindow.fromWebContents(event.sender);
     const result = await electron.dialog.showMessageBox(window ?? undefined, {
       type: "warning",
@@ -155,7 +196,7 @@ function activate(context) {
     return { confirmed: result.response === 1 };
   });
   electron.ipcMain.handle("codex_desktop:extensions-relaunch", async (event) => {
-    if (!context.isTrustedIpcEvent(event)) throw Error("Untrusted sender");
+    if (!isTrustedIpcEvent(event)) throw Error("Untrusted sender");
     require("node:child_process").spawn("/usr/bin/open", ["-n", appBundlePath()], {
       detached: true,
       stdio: "ignore",
@@ -163,7 +204,7 @@ function activate(context) {
     electron.app.exit(0);
   });
   electron.ipcMain.on("codex_desktop:extensions-runtime-modules", runtimeModulesHandler);
-  context.cleanup.add(() => {
+  cleanup.add(() => {
     electron.ipcMain.removeHandler("codex_desktop:extensions-list");
     electron.ipcMain.removeHandler("codex_desktop:extensions-set-enabled");
     electron.ipcMain.removeHandler("codex_desktop:extensions-confirm-reload");
@@ -177,7 +218,7 @@ function activate(context) {
     try {
       const mod = require(entryPath(extension, extension.main));
       if (typeof mod.activate === "function") {
-        mod.activate({ ...context, extension: publicExtension(extension) });
+        mod.activate({ ...extensionContext, extension: publicExtension(extension) });
       }
     } catch (error) {
       try {

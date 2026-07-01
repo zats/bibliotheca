@@ -116,7 +116,7 @@ struct CodexAppPatcher: Sendable {
     private func patchMain(in rootURL: URL) throws {
         let mainURL = try self.mainBundleURL(in: rootURL)
         var source = try self.text(at: mainURL)
-        if source.contains("__codexextActivateMain") {
+        if source.contains("main bootloader failed") {
             return
         }
 
@@ -129,7 +129,7 @@ struct CodexAppPatcher: Sendable {
         let buildURL = rootURL.appending(path: ".vite/build", directoryHint: .isDirectory)
         for fileURL in try self.fileSystem.contentsOfDirectory(at: buildURL) where fileURL.pathExtension == "js" {
             let source = (try? self.text(at: fileURL)) ?? ""
-            if source.contains("onDownloadProgressChanged") && source.contains("appServerConnectionRegistry.getConnection") {
+            if source.contains(".app.getVersion()") && source.contains(".ipcMain") {
                 return fileURL
             }
         }
@@ -137,48 +137,10 @@ struct CodexAppPatcher: Sendable {
     }
 
     private func mainInsertion(source: String) throws -> (range: Range<String.Index>, replacement: String) {
-        let regex = try NSRegularExpression(
-            pattern: #"isTrustedIpcEvent:([A-Za-z_$][A-Za-z0-9_$]*)\}\);let ([A-Za-z_$][A-Za-z0-9_$]*)=\(\)=>([A-Za-z_$][A-Za-z0-9_$]*)\.appServerConnectionRegistry\.getConnection\(([A-Za-z_$][A-Za-z0-9_$]*)\),([A-Za-z_$][A-Za-z0-9_$]*)="#
-        )
-        let nsRange = NSRange(source.startIndex..<source.endIndex, in: source)
-        guard let match = regex.firstMatch(in: source, range: nsRange),
-              let trusted = self.capture(1, match: match, source: source),
-              let getConnection = self.capture(2, match: match, source: source),
-              let nextVariable = self.capture(5, match: match, source: source),
-              let matchRange = Range(match.range, in: source)
-        else {
-            throw CodexSetupError.patchPatternMissing("main activation point")
-        }
-
-        let electron = try self.electronVariable(source: source)
-        let cleanup = try self.firstCapture(
-            pattern: #"([A-Za-z_$][A-Za-z0-9_$]*)\.add\(\(\)=>\{[A-Za-z_$][A-Za-z0-9_$]*\.app\.off\("#,
-            source: source,
-            description: "cleanup container"
-        )
-        let windowServices = try self.firstCapture(
-            pattern: #"windowServices:([A-Za-z_$][A-Za-z0-9_$]*)"#,
-            source: source,
-            description: "window services"
-        )
-        let queryVersion = try self.firstCapturePair(
-            pattern: #"version:([A-Za-z_$][A-Za-z0-9_$]*)\.([A-Za-z_$][A-Za-z0-9_$]*)\(`query-cache-invalidate`\)"#,
-            source: source,
-            description: "query invalidate version"
-        )
-
-        let original = String(source[matchRange])
-        guard let splitRange = original.range(of: ",\(nextVariable)=") else {
-            throw CodexSetupError.patchPatternMissing("main declaration split")
-        }
-        let prefix = original[..<splitRange.lowerBound]
-        let suffix = "let \(nextVariable)="
         let hook = """
-        function __codexextActivateMain(e){try{require(require(`node:path`).join(require(`node:os`).homedir(),`.codex`,`extensions`,`bootloader`,`src`,`main.js`)).activate(e)}catch(e){console.error(`[codex-ext] main bootloader failed`,e)}}
-        __codexextActivateMain({electron:\(electron),appVersion:\(electron).app.getVersion(),isTrustedIpcEvent:\(trusted),getAppServerConnection:\(getConnection),windowServices:\(windowServices),cleanup:\(cleanup),broadcastAccountInfoChanged:()=>{\(windowServices).sendMessageToAllRegisteredWindows({type:`ipc-broadcast`,method:`query-cache-invalidate`,sourceClientId:`desktop`,version:\(queryVersion.0).\(queryVersion.1)(`query-cache-invalidate`),params:{queryKey:[`account-info`]}})},reloadWindowsSoon:(e=250)=>{setTimeout(()=>{try{for(let t of \(electron).BrowserWindow.getAllWindows())t.webContents.reloadIgnoringCache()}catch{}},e)}});
+        (()=>{try{let __e=require(`electron`);require(require(`node:path`).join(require(`node:os`).homedir(),`.codex`,`extensions`,`bootloader`,`src`,`main.js`)).activate({electron:__e,appVersion:__e.app.getVersion()})}catch(e){console.error(`[codex-ext] main bootloader failed`,e)}})();
         """
-
-        return (matchRange, "\(prefix);\(hook)\(suffix)")
+        return (source.startIndex..<source.startIndex, hook)
     }
 
     private func electronAsarIntegrityInfoData(infoURL: URL, asarURL: URL) throws -> Data {
@@ -279,18 +241,6 @@ struct CodexAppPatcher: Sendable {
         return value
     }
 
-    private func firstCapturePair(pattern: String, source: String, description: String) throws -> (String, String) {
-        let regex = try NSRegularExpression(pattern: pattern)
-        let nsRange = NSRange(source.startIndex..<source.endIndex, in: source)
-        guard let match = regex.firstMatch(in: source, range: nsRange),
-              let left = self.capture(1, match: match, source: source),
-              let right = self.capture(2, match: match, source: source)
-        else {
-            throw CodexSetupError.patchPatternMissing(description)
-        }
-        return (left, right)
-    }
-
     private func capture(_ index: Int, match: NSTextCheckingResult, source: String) -> String? {
         guard match.range(at: index).location != NSNotFound,
               let range = Range(match.range(at: index), in: source)
@@ -298,19 +248,6 @@ struct CodexAppPatcher: Sendable {
             return nil
         }
         return String(source[range])
-    }
-
-    private func electronVariable(source: String) throws -> String {
-        let regex = try NSRegularExpression(pattern: #"\b([A-Za-z_$][A-Za-z0-9_$]*)\.app\.getVersion\(\)"#)
-        let nsRange = NSRange(source.startIndex..<source.endIndex, in: source)
-        let matches = regex.matches(in: source, range: nsRange)
-        for match in matches {
-            guard let value = self.capture(1, match: match, source: source), value != "this" else {
-                continue
-            }
-            return value
-        }
-        throw CodexSetupError.patchPatternMissing("electron app variable")
     }
 
     private func text(at url: URL) throws -> String {

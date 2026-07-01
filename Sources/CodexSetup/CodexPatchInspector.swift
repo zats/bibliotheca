@@ -8,7 +8,7 @@ struct CodexPatchInspector: Sendable {
         self.fileSystem = fileSystem
         self.markers = [
             "codex_desktop:extensions-bootloader-preload-source",
-            "__codexextActivateMain",
+            "main bootloader failed",
             ".codex",
             "bootloader",
         ].map { Data($0.utf8) }

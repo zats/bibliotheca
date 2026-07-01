@@ -250,7 +250,7 @@ function preserveLive(registry, targetIdentity) {
   return registry;
 }
 
-async function prepareAddAccount(appServerConnection) {
+async function prepareAddAccount() {
   const fs = require("node:fs");
   const path = require("node:path");
   const crypto = require("node:crypto");
@@ -264,16 +264,10 @@ async function prepareAddAccount(appServerConnection) {
       );
     }
   } catch {}
-  try {
-    appServerConnection?.clearAuthTokenCache?.();
-  } catch {}
-  try {
-    await appServerConnection?.restart?.({ killCodexProcess: false });
-  } catch {}
   return accountRows();
 }
 
-async function switchAccount(account, appServerConnection, options = {}) {
+async function switchAccount(account, options = {}) {
   const fs = require("node:fs");
   const path = require("node:path");
   const crypto = require("node:crypto");
@@ -282,7 +276,6 @@ async function switchAccount(account, appServerConnection, options = {}) {
   const p = paths();
   const registry = readRegistry();
   const row = accountRows().accounts.find((entry) => entry.id === accountId);
-  const previousAuth = options.previousAuth ?? readFile(p.liveAuth);
   if (!row?.managedHomePath) throw Error("Managed account not found");
   const managedAuthPath = path.join(row.managedHomePath, "auth.json");
   const managedAuth = fs.readFileSync(managedAuthPath);
@@ -308,32 +301,6 @@ async function switchAccount(account, appServerConnection, options = {}) {
   fs.chmodSync(staged, 0o600);
   fs.renameSync(staged, p.liveAuth);
   try {
-    appServerConnection?.clearAuthTokenCache?.();
-  } catch {}
-  try {
-    await appServerConnection?.restart?.({ killCodexProcess: false });
-  } catch {}
-  let valid = false;
-  try {
-    await appServerConnection?.getAuthToken?.({ refreshToken: true });
-    valid = true;
-  } catch {}
-  if (!valid && previousAuth) {
-    try {
-      const restore = path.join(p.liveHome, `auth.json.accounts-restore-${crypto.randomUUID()}`);
-      fs.writeFileSync(restore, previousAuth);
-      fs.chmodSync(restore, 0o600);
-      fs.renameSync(restore, p.liveAuth);
-    } catch {}
-    try {
-      appServerConnection?.clearAuthTokenCache?.();
-    } catch {}
-    try {
-      await appServerConnection?.restart?.({ killCodexProcess: false });
-    } catch {}
-    return { ...accountRows(), switchFailed: true };
-  }
-  try {
     const liveAuth = readFile(p.liveAuth);
     if (liveAuth) {
       fs.writeFileSync(managedAuthPath, liveAuth);
@@ -344,7 +311,7 @@ async function switchAccount(account, appServerConnection, options = {}) {
   return { ...accountRows(), switchedTo: live?.email ?? row.email ?? row.workspaceLabel ?? null };
 }
 
-async function logoutCurrentAccount(appServerConnection, trashItem) {
+async function logoutCurrentAccount(trashItem) {
   const path = require("node:path");
   const p = paths();
   const registry = readRegistry();
@@ -354,8 +321,7 @@ async function logoutCurrentAccount(appServerConnection, trashItem) {
   const current = registry.accounts[currentIndex];
   const remaining = registry.accounts.filter((_, index) => index !== currentIndex);
   if (remaining.length === 0) return { ...accountRows(), fallback: true };
-  const switched = await switchAccount(remaining[0].id, appServerConnection, { skipPreserveLive: true });
-  if (switched?.switchFailed) return { ...switched, removedAccount: null };
+  const switched = await switchAccount(remaining[0].id, { skipPreserveLive: true });
   writeRegistry(registry, remaining);
   const removedHome =
     current.managedHomePath ??
@@ -378,8 +344,6 @@ function activate(context) {
   const {
     electron,
     isTrustedIpcEvent,
-    getAppServerConnection,
-    broadcastAccountInfoChanged,
     reloadWindowsSoon,
     cleanup,
   } = context;
@@ -391,25 +355,21 @@ function activate(context) {
     }],
     ["codex_desktop:accounts-add", async (event) => {
       if (!isTrustedIpcEvent(event)) throw Error("Untrusted sender");
-      const result = await prepareAddAccount(getAppServerConnection());
-      broadcastAccountInfoChanged();
+      const result = await prepareAddAccount();
       reloadWindowsSoon();
       return result;
     }],
     ["codex_desktop:accounts-switch", async (event, accountId) => {
       if (!isTrustedIpcEvent(event)) throw Error("Untrusted sender");
-      const result = await switchAccount(accountId, getAppServerConnection());
-      broadcastAccountInfoChanged();
+      const result = await switchAccount(accountId);
       reloadWindowsSoon();
       return result;
     }],
     ["codex_desktop:accounts-logout-current", async (event) => {
       if (!isTrustedIpcEvent(event)) throw Error("Untrusted sender");
       const result = await logoutCurrentAccount(
-        getAppServerConnection(),
         electron.shell?.trashItem?.bind(electron.shell),
       );
-      broadcastAccountInfoChanged();
       reloadWindowsSoon();
       return result;
     }],
