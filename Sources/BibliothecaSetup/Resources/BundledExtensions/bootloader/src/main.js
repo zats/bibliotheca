@@ -259,9 +259,20 @@ function replaceExtension(stageDir, entry) {
   const p = paths();
   const destination = path.join(p.root, id);
   const backup = path.join(p.root, `.${id}.backup-${Date.now()}`);
+  const restoreUserFiles = (sourceDir, targetDir) => {
+    if (!fs.existsSync(sourceDir)) return;
+    for (const item of fs.readdirSync(sourceDir, { withFileTypes: true })) {
+      if (item.name === "manifest.json" || item.name === ".bibliotheca-extension-receipt.json" || item.name === "src") continue;
+      const source = path.join(sourceDir, item.name);
+      const target = path.join(targetDir, item.name);
+      if (fs.existsSync(target)) continue;
+      fs.cpSync(source, target, { recursive: true, preserveTimestamps: true });
+    }
+  };
   fs.mkdirSync(p.root, { recursive: true });
   if (fs.existsSync(destination)) fs.renameSync(destination, backup);
   fs.renameSync(stageDir, destination);
+  restoreUserFiles(backup, destination);
   writeJson(receiptPath(destination), {
     id,
     version: entry.version ?? entry.latestVersion,
