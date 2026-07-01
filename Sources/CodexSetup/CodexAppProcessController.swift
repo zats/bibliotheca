@@ -30,7 +30,9 @@ struct CodexAppTerminator: Sendable {
     }
 
     func isRunning(appURL: URL, bundleIdentifier: String?) -> Bool {
-        !self.runningProcessIDs(appURL: appURL).isEmpty || self.isRegisteredWithLaunchServices(bundleIdentifier: bundleIdentifier)
+        !self.runningProcessIDs(appURL: appURL).isEmpty
+            || self.isRegisteredWithLaunchServices(bundleIdentifier: bundleIdentifier)
+            || !self.dockExtraApplicationSpecifiers(appURL: appURL).isEmpty
     }
 
     func quit(appURL: URL, bundleIdentifier: String?) throws {
@@ -46,6 +48,7 @@ struct CodexAppTerminator: Sendable {
         }
 
         self.killLaunchServicesApplication(bundleIdentifier: bundleIdentifier, hard: false)
+        self.killDockExtraApplication(appURL: appURL, hard: false)
         if self.waitUntilClosed(appURL: appURL, bundleIdentifier: bundleIdentifier, timeout: 2) {
             return
         }
@@ -56,6 +59,7 @@ struct CodexAppTerminator: Sendable {
         }
 
         self.killLaunchServicesApplication(bundleIdentifier: bundleIdentifier, hard: true)
+        self.killDockExtraApplication(appURL: appURL, hard: true)
         self.signalRunningProcesses(appURL: appURL, signal: "-9")
         if self.waitUntilClosed(appURL: appURL, bundleIdentifier: bundleIdentifier, timeout: 2) {
             return
@@ -91,13 +95,23 @@ struct CodexAppTerminator: Sendable {
 
     private func killLaunchServicesApplication(bundleIdentifier: String?, hard: Bool) {
         for applicationSpecifier in self.launchServicesApplicationSpecifiers(bundleIdentifier: bundleIdentifier, includeExitedApplications: true) {
-            var arguments = ["kill", "-childapps", "-coalition", "-launchdjobs", "-force"]
-            if hard {
-                arguments.append("-hard")
-            }
-            arguments.append(applicationSpecifier)
-            _ = try? self.processRunner.run("/usr/bin/lsappinfo", arguments: arguments)
+            self.killApplicationSpecifier(applicationSpecifier, hard: hard)
         }
+    }
+
+    private func killDockExtraApplication(appURL: URL, hard: Bool) {
+        for applicationSpecifier in self.dockExtraApplicationSpecifiers(appURL: appURL) {
+            self.killApplicationSpecifier(applicationSpecifier, hard: hard)
+        }
+    }
+
+    private func killApplicationSpecifier(_ applicationSpecifier: String, hard: Bool) {
+        var arguments = ["kill", "-childapps", "-coalition", "-launchdjobs", "-force"]
+        if hard {
+            arguments.append("-hard")
+        }
+        arguments.append(applicationSpecifier)
+        _ = try? self.processRunner.run("/usr/bin/lsappinfo", arguments: arguments)
     }
 
     private func launchServicesApplicationSpecifiers(bundleIdentifier: String?, includeExitedApplications: Bool) -> [String] {
@@ -119,6 +133,25 @@ struct CodexAppTerminator: Sendable {
                     return nil
                 }
                 return "\(line[range]):"
+            }
+    }
+
+    private func dockExtraApplicationSpecifiers(appURL: URL) -> [String] {
+        guard let result = try? self.processRunner.run("/usr/bin/lsappinfo", arguments: ["find"]) else {
+            return []
+        }
+
+        let dockExtraName = "Dock_Extra_(\(appURL.lastPathComponent.replacingOccurrences(of: " ", with: "_")))"
+        return result.output
+            .split(whereSeparator: \.isWhitespace)
+            .compactMap { token -> String? in
+                let text = String(token)
+                guard text.contains("-\"\(dockExtraName)\""),
+                      let range = text.range(of: #"ASN:0x[0-9a-fA-F]+-0x[0-9a-fA-F]+"#, options: .regularExpression)
+                else {
+                    return nil
+                }
+                return "\(text[range]):"
             }
     }
 
