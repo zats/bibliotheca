@@ -38,6 +38,9 @@ struct OnboardingSettingsPane: View {
                         restore: {
                             Task { await self.session.restoreSelectedCleanCodex() }
                         },
+                        quitCodex: {
+                            Task { _ = await self.session.perform(.quitCodex) }
+                        },
                         clearError: self.session.clearRestoreError
                     )
                 }
@@ -145,6 +148,7 @@ struct RestoreCodexSection: View {
     let errorMessage: String?
     let loadOptions: () -> Void
     let restore: () -> Void
+    let quitCodex: () -> Void
     let clearError: () -> Void
 
     var body: some View {
@@ -177,18 +181,17 @@ struct RestoreCodexSection: View {
                     Button("Rollback", action: self.loadOptions)
                         .controlSize(.small)
                 } else {
-                    HStack(spacing: 8) {
+                    VStack(alignment: .trailing, spacing: 8) {
                         Picker("Version", selection: self.selectedVersionBinding) {
                             ForEach(self.options) { option in
                                 Text(option.title).tag(option.id)
                             }
                         }
                         .labelsHidden()
-                        .frame(width: 170)
+                        .pickerStyle(.menu)
+                        .frame(width: 230)
 
-                        Button("Restore", action: self.restore)
-                            .controlSize(.small)
-                            .disabled(!self.canRestore)
+                        self.actionButton
                     }
                 }
             }
@@ -214,6 +217,23 @@ struct RestoreCodexSection: View {
 
     private var canRestore: Bool {
         self.isCodexConfirmed && !self.isCodexRunning && self.canManageApps
+    }
+
+    @ViewBuilder
+    private var actionButton: some View {
+        if self.isCodexRunning {
+            Button("Quit Codex", action: self.quitCodex)
+                .controlSize(.small)
+                .frame(minWidth: 92)
+                .fixedSize(horizontal: true, vertical: false)
+                .disabled(!self.isCodexConfirmed)
+        } else {
+            Button("Restore", action: self.restore)
+                .controlSize(.small)
+                .frame(minWidth: 92)
+                .fixedSize(horizontal: true, vertical: false)
+                .disabled(!self.canRestore)
+        }
     }
 
     private var selectedVersionBinding: Binding<CodexRestoreOption.ID> {
