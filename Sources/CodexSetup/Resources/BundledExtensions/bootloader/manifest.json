@@ -1,0 +1,12 @@
+{
+  "id": "bootloader",
+  "name": "Bootloader",
+  "version": "1.0.0",
+  "codexAppVersion": "26.623.42026",
+  "internal": true,
+  "entrypoints": {
+    "main": "src/main.js",
+    "preload": "src/preload.js",
+    "renderer": "src/renderer.js"
+  }
+}
