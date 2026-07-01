@@ -3,6 +3,7 @@ import Foundation
 struct CodexSetupService: Sendable {
     private let configuration: CodexSetupConfiguration
     private let fileSystem: CodexSetupFileSystem
+    private let asarIdentityCache: CodexASARIdentityCache
     private let bundleInspector: CodexAppBundleInspector
     private let patchInspector: CodexPatchInspector
     private let appPatcher: CodexAppPatcher
@@ -19,10 +20,12 @@ struct CodexSetupService: Sendable {
     ) {
         self.configuration = configuration
         self.fileSystem = fileSystem
-        self.bundleInspector = CodexAppBundleInspector(fileSystem: fileSystem)
+        let asarIdentityCache = CodexASARIdentityCache()
+        self.asarIdentityCache = asarIdentityCache
+        self.bundleInspector = CodexAppBundleInspector(fileSystem: fileSystem, asarIdentityCache: asarIdentityCache)
         let patchInspector = CodexPatchInspector(fileSystem: fileSystem)
         self.patchInspector = patchInspector
-        self.appPatcher = CodexAppPatcher(fileSystem: fileSystem)
+        self.appPatcher = CodexAppPatcher(fileSystem: fileSystem, asarIdentityCache: asarIdentityCache)
         self.appInstaller = CodexAppInstaller(fileSystem: fileSystem)
         self.appProcessController = CodexAppProcessController()
         self.extensionStoreInstaller = CodexExtensionStoreInstaller(fileSystem: fileSystem)

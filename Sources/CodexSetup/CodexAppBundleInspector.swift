@@ -1,11 +1,12 @@
-import CryptoKit
 import Foundation
 
 struct CodexAppBundleInspector: Sendable {
     private let fileSystem: CodexSetupFileSystem
+    private let asarIdentityCache: CodexASARIdentityCache
 
-    init(fileSystem: CodexSetupFileSystem) {
+    init(fileSystem: CodexSetupFileSystem, asarIdentityCache: CodexASARIdentityCache = CodexASARIdentityCache()) {
         self.fileSystem = fileSystem
+        self.asarIdentityCache = asarIdentityCache
     }
 
     func installedAppURL(selectedAppURL: URL?, candidateAppURLs: [URL]) -> URL? {
@@ -32,8 +33,7 @@ struct CodexAppBundleInspector: Sendable {
         }
 
         let asarURL = appURL.appending(path: "Contents/Resources/app.asar")
-        let asarHash = try? self.sha256OfFile(at: asarURL)
-        let packageFeedURL = try? self.packageUpdateFeedURL(asarURL: asarURL)
+        let asarIdentity = try? self.asarIdentityCache.identity(at: asarURL, fileSystem: self.fileSystem)
 
         return CodexAppIdentity(
             bundleIdentifier: plist["CFBundleIdentifier"] as? String,
@@ -43,8 +43,8 @@ struct CodexAppBundleInspector: Sendable {
                 chromiumVersion: plist["ChromiumBaseVersion"] as? String,
                 chromiumBundleVersion: plist["ChromiumBaseBundleVersion"] as? String
             ),
-            appASARSHA256: asarHash,
-            updateFeedURL: (plist["SUFeedURL"] as? String).flatMap(URL.init(string:)) ?? packageFeedURL
+            appASARSHA256: asarIdentity?.hash,
+            updateFeedURL: (plist["SUFeedURL"] as? String).flatMap(URL.init(string:)) ?? asarIdentity?.updateFeedURL
         )
     }
 
@@ -61,23 +61,6 @@ struct CodexAppBundleInspector: Sendable {
         }
 
         return plist["CFBundleIdentifier"] as? String == "com.openai.codex"
-    }
-
-    private func sha256OfFile(at url: URL) throws -> String {
-        let data = try self.fileSystem.readData(at: url)
-        return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-    }
-
-    private func packageUpdateFeedURL(asarURL: URL) throws -> URL? {
-        let reader = try CodexAsarReader(data: self.fileSystem.readData(at: asarURL))
-        guard let data = try reader.fileData(path: "package.json"),
-              let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let value = object["codexSparkleFeedUrl"] as? String
-        else {
-            return nil
-        }
-
-        return URL(string: value)
     }
 }
 

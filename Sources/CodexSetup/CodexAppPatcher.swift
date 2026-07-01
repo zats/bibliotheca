@@ -9,11 +9,17 @@ struct CodexPatchResult: Sendable {
 
 struct CodexAppPatcher: Sendable {
     private let fileSystem: CodexSetupFileSystem
+    private let asarIdentityCache: CodexASARIdentityCache
     private let processRunner: CodexProcessRunner
     private let toolLocator: CodexToolLocator
 
-    init(fileSystem: CodexSetupFileSystem, processRunner: CodexProcessRunner = CodexProcessRunner()) {
+    init(
+        fileSystem: CodexSetupFileSystem,
+        asarIdentityCache: CodexASARIdentityCache = CodexASARIdentityCache(),
+        processRunner: CodexProcessRunner = CodexProcessRunner()
+    ) {
         self.fileSystem = fileSystem
+        self.asarIdentityCache = asarIdentityCache
         self.processRunner = processRunner
         self.toolLocator = CodexToolLocator(fileSystem: fileSystem)
     }
@@ -22,7 +28,7 @@ struct CodexAppPatcher: Sendable {
         let resourcesURL = appURL.appending(path: "Contents/Resources", directoryHint: .isDirectory)
         let infoURL = appURL.appending(path: "Contents/Info.plist")
         let asarURL = resourcesURL.appending(path: "app.asar")
-        let cleanHash = try self.sha256(at: asarURL)
+        let cleanHash = try self.asarIdentityHash(at: asarURL)
         let backupURL = backupRootURL.appending(path: "\(appVersion)-\(cleanHash.prefix(12))", directoryHint: .isDirectory)
 
         try self.fileSystem.createDirectory(at: backupURL)
@@ -62,7 +68,7 @@ struct CodexAppPatcher: Sendable {
 
             return CodexPatchResult(
                 cleanAppASARSHA256: cleanHash,
-                patchedAppASARSHA256: try self.sha256(at: asarURL),
+                patchedAppASARSHA256: try self.asarIdentityHash(at: asarURL),
                 backupDirectoryURL: backupURL
             )
         } catch {
@@ -87,6 +93,10 @@ struct CodexAppPatcher: Sendable {
             appURL: appURL,
             rollbackFiles: []
         )
+    }
+
+    private func asarIdentityHash(at url: URL) throws -> String {
+        try self.asarIdentityCache.identity(at: url, fileSystem: self.fileSystem).hash
     }
 
     private func patchPreload(in rootURL: URL, appVersion: String) throws {
@@ -185,6 +195,7 @@ struct CodexAppPatcher: Sendable {
         for file in files {
             do {
                 _ = try self.processRunner.run("/usr/bin/ditto", arguments: [file.source.path, file.destination.path])
+                self.asarIdentityCache.invalidate(at: file.destination)
             } catch {
                 throw self.appManagementErrorIfNeeded(error)
             }
@@ -281,7 +292,4 @@ struct CodexAppPatcher: Sendable {
         return root
     }
 
-    private func sha256(at url: URL) throws -> String {
-        SHA256.hash(data: try self.fileSystem.readData(at: url)).map { String(format: "%02x", $0) }.joined()
-    }
 }
