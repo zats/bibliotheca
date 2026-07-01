@@ -7,6 +7,7 @@ function activate(context) {
     rows: null,
     loading: false,
     error: null,
+    actionButtonClass: null,
   };
 
   function textOf(node) {
@@ -110,6 +111,17 @@ function activate(context) {
     return { wrapper, group };
   }
 
+  function captureSettingsActionButtonClass() {
+    if (state.actionButtonClass) return;
+    if (!settingsContentRoot()) return;
+    const nativeButton = Array.from(document.querySelectorAll("button"))
+      .find((button) => {
+        if (button.dataset.codexExtensionsAction === "true") return false;
+        return ["Import", "View"].includes(textOf(button));
+      });
+    if (nativeButton?.className) state.actionButtonClass = nativeButton.className;
+  }
+
   function setSwitchState(toggle, enabled) {
     const stateName = enabled ? "checked" : "unchecked";
     toggle.dataset.state = stateName;
@@ -159,7 +171,8 @@ function activate(context) {
   function createButton(label, disabled, action) {
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "rounded px-2 py-1 text-sm text-token-text-primary hover:bg-token-main-surface-secondary disabled:cursor-not-allowed disabled:opacity-40";
+    button.dataset.codexExtensionsAction = "true";
+    button.className = state.actionButtonClass || "inline-flex h-7 items-center justify-center rounded bg-token-main-surface-secondary px-2 text-sm text-token-text-primary hover:bg-token-main-surface-tertiary disabled:cursor-not-allowed disabled:opacity-40";
     button.textContent = label;
     button.disabled = !!disabled || state.loading;
     button.addEventListener("click", async (event) => {
@@ -272,6 +285,7 @@ function activate(context) {
       return;
     }
     root.dataset.codexExtensionsContentRoot = "true";
+    captureSettingsActionButtonClass();
     root.textContent = "";
     const scroller = document.createElement("div");
     scroller.className = "scrollbar-stable flex-1 overflow-y-auto p-panel";
@@ -366,6 +380,7 @@ function activate(context) {
     if (personalSettingsButtons().length === 0) {
       state.extensionsView = false;
     }
+    captureSettingsActionButtonClass();
     renderExtensionsSidebarItem();
   }
 
