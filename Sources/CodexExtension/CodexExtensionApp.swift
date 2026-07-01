@@ -55,6 +55,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.post(name: .codexExtensionOpenSettings, object: nil)
     }
 
+    @objc private func launchCodex() {
+        Task { @MainActor in
+            do {
+                try await self.setupRuntime.launchCodex()
+            } catch {
+                self.openSettings()
+            }
+        }
+    }
+
     @objc private func quit() {
         NSApp.terminate(nil)
     }
@@ -71,6 +81,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: "Open", action: #selector(self.openSettings), keyEquivalent: "o"))
+        menu.addItem(NSMenuItem(title: "Launch Codex", action: #selector(self.launchCodex), keyEquivalent: "l"))
         menu.addItem(NSMenuItem(title: "Settings", action: #selector(self.openSettings), keyEquivalent: ","))
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(self.quit), keyEquivalent: "q"))
