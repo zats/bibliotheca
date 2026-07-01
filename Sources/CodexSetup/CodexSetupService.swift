@@ -10,6 +10,7 @@ struct CodexSetupService: Sendable {
     private let appInstaller: CodexAppInstaller
     private let appProcessController: CodexAppProcessController
     private let extensionStoreInstaller: CodexExtensionStoreInstaller
+    private let skillInstaller: CodexSkillInstaller
     private let updateChecker: CodexUpdateChecker
     private let backupStore: CodexPatchBackupStore
 
@@ -29,6 +30,7 @@ struct CodexSetupService: Sendable {
         self.appInstaller = CodexAppInstaller(fileSystem: fileSystem)
         self.appProcessController = CodexAppProcessController()
         self.extensionStoreInstaller = CodexExtensionStoreInstaller(fileSystem: fileSystem)
+        self.skillInstaller = CodexSkillInstaller(fileSystem: fileSystem)
         self.updateChecker = updateChecker
         self.backupStore = CodexPatchBackupStore(
             rootURL: configuration.extensionsRootURL.appending(path: ".codex-extension-backups", directoryHint: .isDirectory),
@@ -101,6 +103,10 @@ struct CodexSetupService: Sendable {
             from: self.configuration.bundledExtensionsRootURL,
             to: self.configuration.extensionsRootURL,
             codexAppVersion: appIdentity.version.shortVersion
+        )
+        try self.skillInstaller.installBundledSkills(
+            from: self.configuration.bundledSkillsRootURL,
+            to: self.configuration.skillsRootURL
         )
     }
 

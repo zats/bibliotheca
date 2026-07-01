@@ -223,6 +223,8 @@ struct CodexSetupConfiguration: Sendable {
     var extensionsRootURL: URL
     var provisioningReceiptURL: URL
     var bundledExtensionsRootURL: URL
+    var skillsRootURL: URL
+    var bundledSkillsRootURL: URL
     var codexUpdateFeedURL: URL?
 
     init(
@@ -230,12 +232,16 @@ struct CodexSetupConfiguration: Sendable {
         extensionsRootURL: URL,
         provisioningReceiptURL: URL,
         bundledExtensionsRootURL: URL,
+        skillsRootURL: URL? = nil,
+        bundledSkillsRootURL: URL? = nil,
         codexUpdateFeedURL: URL? = nil
     ) {
         self.candidateAppURLs = candidateAppURLs
         self.extensionsRootURL = extensionsRootURL
         self.provisioningReceiptURL = provisioningReceiptURL
         self.bundledExtensionsRootURL = bundledExtensionsRootURL
+        self.skillsRootURL = skillsRootURL ?? extensionsRootURL.deletingLastPathComponent().appending(path: "skills", directoryHint: .isDirectory)
+        self.bundledSkillsRootURL = bundledSkillsRootURL ?? bundledExtensionsRootURL.deletingLastPathComponent().appending(path: "BundledSkills", directoryHint: .isDirectory)
         self.codexUpdateFeedURL = codexUpdateFeedURL
     }
 }
@@ -244,6 +250,7 @@ enum CodexSetupError: LocalizedError {
     case codexAppMissing
     case invalidCodexBundle(URL)
     case bundledExtensionsMissing(URL)
+    case bundledSkillsMissing(URL)
     case invalidExtensionManifest(URL)
     case updateFeedMissing
     case updateFeedMalformed
@@ -265,6 +272,8 @@ enum CodexSetupError: LocalizedError {
             "Invalid Codex bundle at \(url.path)."
         case .bundledExtensionsMissing(let url):
             "Bundled extensions are missing at \(url.path)."
+        case .bundledSkillsMissing(let url):
+            "Bundled skills are missing at \(url.path)."
         case .invalidExtensionManifest(let url):
             "Invalid extension manifest at \(url.path)."
         case .updateFeedMissing:

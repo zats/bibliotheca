@@ -35,6 +35,7 @@ let package = Package(
             ],
             resources: [
                 .copy("Resources/BundledExtensions"),
+                .copy("Resources/BundledSkills"),
             ],
             swiftSettings: [
                 .enableUpcomingFeature("StrictConcurrency"),

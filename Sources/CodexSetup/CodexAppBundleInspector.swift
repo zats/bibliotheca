@@ -70,6 +70,9 @@ extension CodexSetupConfiguration {
         let bundledURL = Bundle.module.resourceURL?.appending(path: "BundledExtensions", directoryHint: .isDirectory)
             ?? Bundle.main.resourceURL?.appending(path: "BundledExtensions", directoryHint: .isDirectory)
             ?? homeURL.appending(path: ".codex/extensions-template", directoryHint: .isDirectory)
+        let bundledSkillsURL = Bundle.module.resourceURL?.appending(path: "BundledSkills", directoryHint: .isDirectory)
+            ?? Bundle.main.resourceURL?.appending(path: "BundledSkills", directoryHint: .isDirectory)
+            ?? homeURL.appending(path: ".codex/skills-template", directoryHint: .isDirectory)
 
         return Self(
             candidateAppURLs: [
@@ -79,6 +82,8 @@ extension CodexSetupConfiguration {
             extensionsRootURL: homeURL.appending(path: ".codex/extensions", directoryHint: .isDirectory),
             provisioningReceiptURL: homeURL.appending(path: ".codex/extensions/.codex-extension-receipt.json"),
             bundledExtensionsRootURL: bundledURL,
+            skillsRootURL: homeURL.appending(path: ".codex/skills", directoryHint: .isDirectory),
+            bundledSkillsRootURL: bundledSkillsURL,
             codexUpdateFeedURL: nil
         )
     }
