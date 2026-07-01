@@ -45,8 +45,6 @@ function activate(context) {
     ipcRenderer.invoke("codex_desktop:extensions-install", id);
   bridge.codexExtensionsUninstall = async (id) =>
     ipcRenderer.invoke("codex_desktop:extensions-uninstall", id);
-  bridge.codexExtensionsSetAutoUpdate = async (id, enabled) =>
-    ipcRenderer.invoke("codex_desktop:extensions-set-auto-update", id, enabled);
   bridge.codexExtensionsConfirmReload = async () =>
     ipcRenderer.invoke("codex_desktop:extensions-confirm-reload");
   bridge.codexExtensionsRelaunch = async () =>

@@ -23,7 +23,6 @@ function activate(context) {
       canInstall: false,
       canUpdate: false,
       canUninstall: true,
-      autoUpdate: false,
     };
   }
 
@@ -102,82 +101,19 @@ function activate(context) {
   function extensionSectionShell() {
     const wrapper = document.createElement("div");
     wrapper.dataset.codexExtensionsSettings = "true";
-    wrapper.className = "flex flex-col gap-[var(--padding-panel)]";
-
-    const section = document.createElement("div");
-    section.className = "flex flex-col gap-2";
-
-    const header = document.createElement("div");
-    header.className = "flex h-toolbar items-center justify-between gap-2 px-0 py-0";
-    const headerText = document.createElement("div");
-    headerText.className = "flex min-w-0 flex-1 flex-col gap-1";
-    const title = document.createElement("div");
-    title.className = "text-base font-medium text-token-text-primary";
-    title.textContent = "Extensions";
-    headerText.append(title);
-    header.append(headerText);
+    wrapper.className = "flex flex-col";
 
     const group = document.createElement("div");
-    group.className = "flex flex-col divide-y-[0.5px] divide-token-border overflow-hidden rounded border border-token-border";
-    group.style.backgroundColor = "var(--color-background-panel, var(--color-token-bg-fog))";
+    group.className = "flex flex-col divide-y-[0.5px] divide-token-border";
 
-    section.append(header, group);
-    wrapper.append(section);
+    wrapper.append(group);
     return { wrapper, group };
-  }
-
-  function setSwitchState(toggle, enabled) {
-    const stateName = enabled ? "checked" : "unchecked";
-    toggle.dataset.state = stateName;
-    toggle.setAttribute("aria-checked", String(enabled));
-    const track = toggle.querySelector("[data-codex-extensions-switch-track='true']");
-    if (track) {
-      track.dataset.state = stateName;
-      track.className = `relative inline-flex h-5 w-8 shrink-0 items-center rounded-full transition-colors duration-200 ease-out ${enabled ? "bg-token-charts-blue" : "bg-token-foreground/10"}`;
-    }
-    const thumb = toggle.querySelector("[data-codex-extensions-switch-thumb='true']");
-    if (thumb) {
-      thumb.dataset.state = stateName;
-    }
-  }
-
-  function createSwitch(extension) {
-    const toggle = document.createElement("button");
-    toggle.type = "button";
-    toggle.setAttribute("role", "switch");
-    toggle.setAttribute("aria-label", extension.name || extension.id);
-    toggle.className = "inline-flex cursor-interaction items-center text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-token-focus-border focus-visible:rounded-full";
-
-    const track = document.createElement("span");
-    track.dataset.codexExtensionsSwitchTrack = "true";
-    const thumb = document.createElement("span");
-    thumb.dataset.codexExtensionsSwitchThumb = "true";
-    thumb.className = "rounded-full border border-[color:var(--gray-0)] bg-[color:var(--gray-0)] shadow-sm transition-transform duration-200 ease-out data-[state=unchecked]:translate-x-0 h-4 w-4 data-[state=unchecked]:translate-x-[2px] data-[state=checked]:translate-x-[14px]";
-    track.append(thumb);
-    toggle.append(track);
-    setSwitchState(toggle, !!extension.enabled);
-
-    toggle.addEventListener("click", async (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      const nextEnabled = toggle.getAttribute("aria-checked") !== "true";
-      setSwitchState(toggle, nextEnabled);
-      const result = await bridge?.codexExtensionsConfirmReload?.();
-      if (!result?.confirmed) {
-        setSwitchState(toggle, !!extension.enabled);
-        return;
-      }
-      await bridge?.codexExtensionsSetEnabled?.(extension.id, nextEnabled);
-      await bridge?.codexExtensionsRelaunch?.();
-    });
-
-    return toggle;
   }
 
   function createButton(label, disabled, action) {
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "rounded px-2 py-1 text-sm text-token-text-primary hover:bg-token-main-surface-secondary disabled:cursor-not-allowed disabled:opacity-40";
+    button.className = "px-0 py-1 text-sm text-token-text-primary hover:text-token-text-secondary disabled:cursor-not-allowed disabled:opacity-40";
     button.textContent = label;
     button.disabled = !!disabled || state.loading;
     button.addEventListener("click", async (event) => {
@@ -196,19 +132,11 @@ function activate(context) {
     return button;
   }
 
-  function createAutoUpdateButton(extension) {
-    return createButton(extension.autoUpdate ? "Auto on" : "Auto", false, async () => {
-      const result = await bridge?.codexExtensionsSetAutoUpdate?.(extension.id, !extension.autoUpdate);
-      state.rows = Array.isArray(result?.extensions) ? result.extensions : state.rows;
-      renderExtensionsPage();
-    });
-  }
-
   function extensionDetail(extension) {
     if (!extension.compatible) return "Incompatible";
     if (extension.updateAvailable) return `${extension.installedVersion} -> ${extension.latestVersion}`;
-    if (extension.installedVersion) return `Installed ${extension.installedVersion}`;
-    if (extension.latestVersion) return `Available ${extension.latestVersion}`;
+    if (extension.installed) return extension.installedVersion ? `Installed ${extension.installedVersion}` : "Installed";
+    if (extension.latestVersion) return "";
     return "";
   }
 
@@ -235,16 +163,23 @@ function activate(context) {
     await bridge?.codexExtensionsRelaunch?.();
   }
 
+  async function setExtensionEnabled(extension, enabled) {
+    const result = await bridge?.codexExtensionsConfirmReload?.();
+    if (!result?.confirmed) return;
+    await bridge?.codexExtensionsSetEnabled?.(extension.id, enabled);
+    await bridge?.codexExtensionsRelaunch?.();
+  }
+
   function createExtensionRow(extension) {
     const row = document.createElement("div");
-    row.className = "flex items-center justify-between gap-4 p-3";
+    row.className = "flex items-center justify-between gap-4 py-3";
 
     const textWrap = document.createElement("div");
     textWrap.className = "flex min-w-0 items-center gap-3";
     const column = document.createElement("div");
     column.className = "flex min-w-0 flex-col gap-1";
     const name = document.createElement("div");
-    name.className = "flex min-w-0 items-center gap-1.5 text-sm text-token-text-primary";
+    name.className = "flex min-w-0 items-center gap-1.5 text-sm font-medium text-token-text-primary";
     const nameText = document.createElement("span");
     nameText.className = "min-w-0 truncate";
     nameText.textContent = extension.name || extension.id;
@@ -255,7 +190,7 @@ function activate(context) {
 
     if (extension.description) {
       const description = document.createElement("div");
-      description.className = "text-token-text-secondary min-w-0 text-sm";
+      description.className = "text-token-text-secondary min-w-0 text-xs";
       description.textContent = extension.description;
       column.append(description);
     }
@@ -272,8 +207,7 @@ function activate(context) {
     const action = document.createElement("div");
     action.className = "flex shrink-0 items-center gap-2";
     if (extension.installed) {
-      action.append(createSwitch(extension));
-      action.append(createAutoUpdateButton(extension));
+      action.append(createButton(extension.enabled ? "Disable" : "Enable", false, () => setExtensionEnabled(extension, !extension.enabled)));
       if (extension.updateAvailable) {
         action.append(createButton("Update", !extension.canUpdate, () => mutateExtension(extension, "update")));
       }
@@ -299,9 +233,9 @@ function activate(context) {
     const content = document.createElement("div");
     content.className = "mx-auto flex w-full flex-col max-w-2xl electron:min-w-[calc(320px*var(--codex-window-zoom))]";
     const header = document.createElement("div");
-    header.className = "flex items-center justify-between gap-3 pb-panel";
+    header.className = "flex items-center justify-between gap-3 pb-4";
     const headerText = document.createElement("div");
-    headerText.className = "flex min-w-0 flex-1 flex-col gap-1.5 pb-panel";
+    headerText.className = "flex min-w-0 flex-1 flex-col gap-1.5";
     const title = document.createElement("div");
     title.className = "electron:heading-lg heading-base truncate";
     title.textContent = "Extensions";
@@ -318,7 +252,7 @@ function activate(context) {
     const rows = state.rows ?? [];
     if (state.error) {
       const error = document.createElement("div");
-      error.className = "mb-3 rounded bg-token-main-surface-secondary p-3 text-sm text-token-text-secondary";
+      error.className = "mb-3 text-sm text-token-text-secondary";
       error.textContent = state.error;
       content.append(error);
     }
@@ -327,12 +261,12 @@ function activate(context) {
     }
     if (state.loading) {
       const loading = document.createElement("div");
-      loading.className = "p-3 text-sm text-token-text-secondary";
+      loading.className = "py-3 text-sm text-token-text-secondary";
       loading.textContent = "Loading";
       group.append(loading);
     } else if (rows.length === 0) {
       const empty = document.createElement("div");
-      empty.className = "p-3 text-sm text-token-text-secondary";
+      empty.className = "py-3 text-sm text-token-text-secondary";
       empty.textContent = "No extensions found";
       group.append(empty);
     }

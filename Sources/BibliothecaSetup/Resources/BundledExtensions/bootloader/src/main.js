@@ -6,7 +6,6 @@ function paths() {
   return {
     root,
     state: path.join(root, "state.json"),
-    autoUpdates: path.join(root, "auto-updates.json"),
   };
 }
 
@@ -159,10 +158,8 @@ async function registryExtensions() {
 }
 
 async function extensionCatalog(appVersion) {
-  const p = paths();
   const installed = discover(appVersion).filter((extension) => !extension.internal);
   const installedByID = new Map(installed.map((extension) => [extension.id, extension]));
-  const autoUpdates = readJson(p.autoUpdates) ?? {};
   const available = await registryExtensions();
   const rows = [];
   const seen = new Set();
@@ -189,7 +186,6 @@ async function extensionCatalog(appVersion) {
       canInstall: compatible && !!entry.assetURL && !!entry.sha256,
       canUpdate: !!local && hasUpdate && compatible && !!entry.assetURL && !!entry.sha256,
       canUninstall: !!local,
-      autoUpdate: autoUpdates[id] === true,
     });
     seen.add(id);
   }
@@ -205,7 +201,6 @@ async function extensionCatalog(appVersion) {
       canInstall: false,
       canUpdate: false,
       canUninstall: true,
-      autoUpdate: autoUpdates[local.id] === true,
     });
   }
 
@@ -302,17 +297,10 @@ function uninstallExtension(id, appVersion) {
 async function autoUpdateExtensions(appVersion) {
   const catalog = await extensionCatalog(appVersion);
   for (const extension of catalog.extensions) {
-    if (extension.autoUpdate && extension.canUpdate) {
+    if (extension.canUpdate) {
       await installExtension(extension.id, appVersion);
     }
   }
-}
-
-function setAutoUpdate(id, enabled) {
-  const p = paths();
-  const autoUpdates = readJson(p.autoUpdates) ?? {};
-  autoUpdates[ensureSafeExtensionID(id)] = !!enabled;
-  writeJson(p.autoUpdates, autoUpdates);
 }
 
 function setEnabled(id, enabled, appVersion) {
@@ -426,11 +414,6 @@ function activate(context) {
     if (!isTrustedIpcEvent(event)) throw Error("Untrusted sender");
     return uninstallExtension(id, appVersion);
   });
-  electron.ipcMain.handle("codex_desktop:extensions-set-auto-update", async (event, id, enabled) => {
-    if (!isTrustedIpcEvent(event)) throw Error("Untrusted sender");
-    setAutoUpdate(id, enabled);
-    return extensionCatalog(appVersion);
-  });
   electron.ipcMain.handle("codex_desktop:extensions-confirm-reload", async (event) => {
     if (!isTrustedIpcEvent(event)) throw Error("Untrusted sender");
     const window = electron.BrowserWindow.fromWebContents(event.sender);
@@ -465,7 +448,6 @@ function activate(context) {
     electron.ipcMain.removeHandler("codex_desktop:extensions-check-updates");
     electron.ipcMain.removeHandler("codex_desktop:extensions-install");
     electron.ipcMain.removeHandler("codex_desktop:extensions-uninstall");
-    electron.ipcMain.removeHandler("codex_desktop:extensions-set-auto-update");
     electron.ipcMain.removeHandler("codex_desktop:extensions-confirm-reload");
     electron.ipcMain.removeHandler("codex_desktop:extensions-relaunch");
     electron.ipcMain.off("codex_desktop:extensions-bootloader-preload-source", bootloaderPreloadHandler);
