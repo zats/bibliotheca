@@ -55,7 +55,8 @@ struct CodexExtensionStoreInstaller: Sendable {
 
         try self.fileSystem.createDirectory(at: destinationRootURL)
         let templateDirectories = try self.fileSystem.contentsOfDirectory(at: templateRootURL)
-        var disabledIDs = [String: Bool]()
+        let existingState = self.extensionEnabledState(at: destinationRootURL.appending(path: "state.json"))
+        var enabledState = [String: Bool]()
 
         for templateDirectory in templateDirectories {
             let manifestURL = templateDirectory.appending(path: "manifest.json")
@@ -79,24 +80,28 @@ struct CodexExtensionStoreInstaller: Sendable {
             }
 
             if Self.requiredInfrastructureExtensionIDs.contains(extensionID.id) {
-                disabledIDs[extensionID.id] = true
+                enabledState[extensionID.id] = true
             } else if !extensionID.internalExtension {
-                disabledIDs[extensionID.id] = false
+                enabledState[extensionID.id] = existingState[extensionID.id] ?? false
             }
         }
 
-        let stateData = try JSONSerialization.data(withJSONObject: disabledIDs, options: [.prettyPrinted, .sortedKeys])
+        let stateData = try JSONSerialization.data(withJSONObject: enabledState, options: [.prettyPrinted, .sortedKeys])
         try self.fileSystem.writeData(stateData, to: destinationRootURL.appending(path: "state.json"))
     }
 
     private func disabledExtensionIDs(at stateURL: URL) -> Set<String> {
+        let state = self.extensionEnabledState(at: stateURL)
+        return Set(state.compactMap { id, enabled in enabled ? nil : id })
+    }
+
+    private func extensionEnabledState(at stateURL: URL) -> [String: Bool] {
         guard let data = try? self.fileSystem.readData(at: stateURL),
               let state = try? JSONSerialization.jsonObject(with: data) as? [String: Bool]
         else {
-            return []
+            return [:]
         }
-
-        return Set(state.compactMap { id, enabled in enabled ? nil : id })
+        return state
     }
 
     private func copyDirectoryTree(from sourceURL: URL, to destinationURL: URL) throws {

@@ -15,6 +15,9 @@ struct CodexUpdateRepatchIntegrationTests {
         guard fileManager.fileExists(atPath: sourceAppURL.path) else {
             return
         }
+        guard !CodexAppProcessController().isRunning(appURL: sourceAppURL, bundleIdentifier: "com.openai.codex") else {
+            return
+        }
 
         let rootURL = URL(filePath: NSTemporaryDirectory(), directoryHint: .isDirectory)
             .appending(path: "codex-update-repatch-test-\(UUID().uuidString)", directoryHint: .isDirectory)
