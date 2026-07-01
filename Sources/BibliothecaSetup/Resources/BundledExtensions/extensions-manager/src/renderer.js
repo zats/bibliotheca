@@ -110,10 +110,56 @@ function activate(context) {
     return { wrapper, group };
   }
 
+  function setSwitchState(toggle, enabled) {
+    const stateName = enabled ? "checked" : "unchecked";
+    toggle.dataset.state = stateName;
+    toggle.setAttribute("aria-checked", String(enabled));
+    const track = toggle.querySelector("[data-codex-extensions-switch-track='true']");
+    if (track) {
+      track.dataset.state = stateName;
+      track.className = `relative inline-flex h-5 w-8 shrink-0 items-center rounded-full transition-colors duration-200 ease-out ${enabled ? "bg-token-charts-blue" : "bg-token-foreground/10"}`;
+    }
+    const thumb = toggle.querySelector("[data-codex-extensions-switch-thumb='true']");
+    if (thumb) thumb.dataset.state = stateName;
+  }
+
+  function createSwitch(extension) {
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.setAttribute("role", "switch");
+    toggle.setAttribute("aria-label", extension.name || extension.id);
+    toggle.className = "inline-flex cursor-interaction items-center text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-token-focus-border focus-visible:rounded-full";
+
+    const track = document.createElement("span");
+    track.dataset.codexExtensionsSwitchTrack = "true";
+    const thumb = document.createElement("span");
+    thumb.dataset.codexExtensionsSwitchThumb = "true";
+    thumb.className = "rounded-full border border-[color:var(--gray-0)] bg-[color:var(--gray-0)] shadow-sm transition-transform duration-200 ease-out data-[state=unchecked]:translate-x-[2px] h-4 w-4 data-[state=checked]:translate-x-[14px]";
+    track.append(thumb);
+    toggle.append(track);
+    setSwitchState(toggle, !!extension.enabled);
+
+    toggle.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const nextEnabled = toggle.getAttribute("aria-checked") !== "true";
+      setSwitchState(toggle, nextEnabled);
+      const result = await bridge?.codexExtensionsConfirmReload?.();
+      if (!result?.confirmed) {
+        setSwitchState(toggle, !!extension.enabled);
+        return;
+      }
+      await bridge?.codexExtensionsSetEnabled?.(extension.id, nextEnabled);
+      await bridge?.codexExtensionsRelaunch?.();
+    });
+
+    return toggle;
+  }
+
   function createButton(label, disabled, action) {
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "px-0 py-1 text-sm text-token-text-primary hover:text-token-text-secondary disabled:cursor-not-allowed disabled:opacity-40";
+    button.className = "rounded px-2 py-1 text-sm text-token-text-primary hover:bg-token-main-surface-secondary disabled:cursor-not-allowed disabled:opacity-40";
     button.textContent = label;
     button.disabled = !!disabled || state.loading;
     button.addEventListener("click", async (event) => {
@@ -135,7 +181,6 @@ function activate(context) {
   function extensionDetail(extension) {
     if (!extension.compatible) return "Incompatible";
     if (extension.updateAvailable) return `${extension.installedVersion} -> ${extension.latestVersion}`;
-    if (extension.installed) return extension.installedVersion ? `Installed ${extension.installedVersion}` : "Installed";
     if (extension.latestVersion) return "";
     return "";
   }
@@ -207,7 +252,7 @@ function activate(context) {
     const action = document.createElement("div");
     action.className = "flex shrink-0 items-center gap-2";
     if (extension.installed) {
-      action.append(createButton(extension.enabled ? "Disable" : "Enable", false, () => setExtensionEnabled(extension, !extension.enabled)));
+      action.append(createSwitch(extension));
       if (extension.updateAvailable) {
         action.append(createButton("Update", !extension.canUpdate, () => mutateExtension(extension, "update")));
       }
