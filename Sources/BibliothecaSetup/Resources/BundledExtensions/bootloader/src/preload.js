@@ -37,6 +37,16 @@ function activate(context) {
   bridge.codexExtensionsList = async () => ipcRenderer.invoke("codex_desktop:extensions-list");
   bridge.codexExtensionsSetEnabled = async (id, enabled) =>
     ipcRenderer.invoke("codex_desktop:extensions-set-enabled", id, enabled);
+  bridge.codexExtensionsCatalog = async () =>
+    ipcRenderer.invoke("codex_desktop:extensions-catalog");
+  bridge.codexExtensionsCheckUpdates = async () =>
+    ipcRenderer.invoke("codex_desktop:extensions-check-updates");
+  bridge.codexExtensionsInstall = async (id) =>
+    ipcRenderer.invoke("codex_desktop:extensions-install", id);
+  bridge.codexExtensionsUninstall = async (id) =>
+    ipcRenderer.invoke("codex_desktop:extensions-uninstall", id);
+  bridge.codexExtensionsSetAutoUpdate = async (id, enabled) =>
+    ipcRenderer.invoke("codex_desktop:extensions-set-auto-update", id, enabled);
   bridge.codexExtensionsConfirmReload = async () =>
     ipcRenderer.invoke("codex_desktop:extensions-confirm-reload");
   bridge.codexExtensionsRelaunch = async () =>

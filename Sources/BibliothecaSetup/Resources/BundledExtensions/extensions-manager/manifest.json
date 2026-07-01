@@ -1,7 +1,9 @@
 {
   "id": "extensions-manager",
   "name": "Extensions",
+  "version": "1.0.0",
   "codexAppVersion": "26.623.42026",
+  "internal": true,
   "entrypoints": {
     "renderer": "src/renderer.js"
   }

@@ -6,6 +6,7 @@ function paths() {
   return {
     root,
     state: path.join(root, "state.json"),
+    autoUpdates: path.join(root, "auto-updates.json"),
   };
 }
 
@@ -41,6 +42,46 @@ function readText(filePath) {
   }
 }
 
+function receiptPath(extensionDir) {
+  return require("node:path").join(extensionDir, ".bibliotheca-extension-receipt.json");
+}
+
+function installedReceipt(extension) {
+  return readJson(receiptPath(extension.dir));
+}
+
+function compareVersions(left, right) {
+  const leftParts = String(left ?? "").split(".").map((part) => Number.parseInt(part, 10) || 0);
+  const rightParts = String(right ?? "").split(".").map((part) => Number.parseInt(part, 10) || 0);
+  const length = Math.max(leftParts.length, rightParts.length);
+  for (let index = 0; index < length; index += 1) {
+    if ((leftParts[index] ?? 0) > (rightParts[index] ?? 0)) return 1;
+    if ((leftParts[index] ?? 0) < (rightParts[index] ?? 0)) return -1;
+  }
+  return 0;
+}
+
+function satisfiesVersionRange(version, range) {
+  if (!range) return true;
+  return String(range).split(/\s+/).filter(Boolean).every((term) => {
+    const match = term.match(/^(>=|<=|>|<|=)?(.+)$/);
+    if (!match) return false;
+    const operator = match[1] || "=";
+    const comparison = compareVersions(version, match[2]);
+    if (operator === ">=") return comparison >= 0;
+    if (operator === "<=") return comparison <= 0;
+    if (operator === ">") return comparison > 0;
+    if (operator === "<") return comparison < 0;
+    return comparison === 0;
+  });
+}
+
+function extensionCompatible(extension, appVersion) {
+  if (extension.codexVersionRange) return satisfiesVersionRange(appVersion, extension.codexVersionRange);
+  if (extension.codexAppVersion) return extension.codexAppVersion === appVersion;
+  return true;
+}
+
 function discover(appVersion) {
   const fs = require("node:fs");
   const path = require("node:path");
@@ -61,7 +102,8 @@ function discover(appVersion) {
         description: manifest.description ? String(manifest.description) : null,
         version: manifest.version ?? null,
         codexAppVersion: manifest.codexAppVersion ?? null,
-        compatible: manifest.codexAppVersion === appVersion,
+        codexVersionRange: manifest.codexVersionRange ?? null,
+        compatible: extensionCompatible(manifest, appVersion),
         enabled: state[id] !== false,
         internal: manifest.internal === true,
         dir,
@@ -81,10 +123,196 @@ function publicExtension(extension) {
     description: extension.description,
     version: extension.version,
     codexAppVersion: extension.codexAppVersion,
+    codexVersionRange: extension.codexVersionRange,
     compatible: extension.compatible,
     enabled: extension.enabled,
     internal: extension.internal,
   };
+}
+
+const registryURL = "https://raw.githubusercontent.com/zats/codex-extensions/refs/heads/main/registry.json";
+
+async function fetchJson(url) {
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) throw Error(`Registry request failed: ${response.status}`);
+  return response.json();
+}
+
+function resolveRegistryURL(pathOrURL) {
+  return new URL(String(pathOrURL), registryURL).toString();
+}
+
+function manifestPathForRegistryEntry(entry) {
+  return `packages/${ensureSafeExtensionID(entry.id)}/manifest.json`;
+}
+
+async function registryExtensions() {
+  const index = await fetchJson(registryURL);
+  const entries = Array.isArray(index?.extensions) ? index.extensions : [];
+  return Promise.all(entries.map(async (entry) => {
+    const manifest = await fetchJson(resolveRegistryURL(manifestPathForRegistryEntry(entry)));
+    return {
+      ...manifest,
+      latestVersion: manifest.version,
+    };
+  }));
+}
+
+async function extensionCatalog(appVersion) {
+  const p = paths();
+  const installed = discover(appVersion).filter((extension) => !extension.internal);
+  const installedByID = new Map(installed.map((extension) => [extension.id, extension]));
+  const autoUpdates = readJson(p.autoUpdates) ?? {};
+  const available = await registryExtensions();
+  const rows = [];
+  const seen = new Set();
+
+  for (const entry of available) {
+    const id = String(entry.id);
+    const local = installedByID.get(id);
+    const receipt = local ? installedReceipt(local) : null;
+    const installedVersion = receipt?.version ?? local?.version ?? null;
+    const latestVersion = entry.version ?? entry.latestVersion ?? null;
+    const compatible = satisfiesVersionRange(appVersion, entry.codexVersionRange);
+    const hasUpdate = !!installedVersion && !!latestVersion && compareVersions(installedVersion, latestVersion) < 0;
+    rows.push({
+      id,
+      name: entry.name ?? local?.name ?? id,
+      description: entry.description ?? local?.description ?? null,
+      installed: !!local,
+      enabled: local?.enabled ?? false,
+      installedVersion,
+      latestVersion,
+      updateAvailable: hasUpdate,
+      compatible,
+      codexVersionRange: entry.codexVersionRange ?? null,
+      canInstall: compatible && !!entry.assetURL && !!entry.sha256,
+      canUpdate: !!local && hasUpdate && compatible && !!entry.assetURL && !!entry.sha256,
+      canUninstall: !!local,
+      autoUpdate: autoUpdates[id] === true,
+    });
+    seen.add(id);
+  }
+
+  for (const local of installed) {
+    if (seen.has(local.id)) continue;
+    rows.push({
+      ...publicExtension(local),
+      installed: true,
+      installedVersion: installedReceipt(local)?.version ?? local.version ?? null,
+      latestVersion: null,
+      updateAvailable: false,
+      canInstall: false,
+      canUpdate: false,
+      canUninstall: true,
+      autoUpdate: autoUpdates[local.id] === true,
+    });
+  }
+
+  return { extensions: rows.sort((left, right) => left.name.localeCompare(right.name)) };
+}
+
+async function registryExtension(id) {
+  const entries = await registryExtensions();
+  return entries.find((entry) => entry.id === id) ?? null;
+}
+
+function ensureSafeExtensionID(id) {
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(String(id))) throw Error("Invalid extension id");
+  return String(id);
+}
+
+async function downloadAsset(entry) {
+  const fs = require("node:fs");
+  const os = require("node:os");
+  const path = require("node:path");
+  const crypto = require("node:crypto");
+  const id = ensureSafeExtensionID(entry.id);
+  if (!entry.assetURL || !entry.sha256) throw Error("Extension release asset is missing");
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), `codex-extension-${id}-`));
+  const archivePath = path.join(tempDir, `${id}.zip`);
+  const response = await fetch(entry.assetURL, { cache: "no-store" });
+  if (!response.ok) throw Error(`Download failed: ${response.status}`);
+  const data = Buffer.from(await response.arrayBuffer());
+  const digest = crypto.createHash("sha256").update(data).digest("hex");
+  if (digest !== entry.sha256) throw Error("Downloaded extension checksum mismatch");
+  fs.writeFileSync(archivePath, data);
+  return { tempDir, archivePath };
+}
+
+function unpackExtension(archivePath, entry, appVersion) {
+  const childProcess = require("node:child_process");
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const id = ensureSafeExtensionID(entry.id);
+  const stageDir = path.join(path.dirname(archivePath), "stage");
+  fs.mkdirSync(stageDir, { recursive: true });
+  const result = childProcess.spawnSync("/usr/bin/ditto", ["-x", "-k", archivePath, stageDir], { encoding: "utf8" });
+  if (result.status !== 0) throw Error(result.stderr || "Extension archive extraction failed");
+  const manifest = readJson(path.join(stageDir, "manifest.json"));
+  if (!manifest || manifest.id !== id) throw Error("Extension manifest id mismatch");
+  if (manifest.version !== (entry.version ?? entry.latestVersion)) throw Error("Extension manifest version mismatch");
+  if (manifest.codexVersionRange !== entry.codexVersionRange) throw Error("Extension compatibility range mismatch");
+  if (!extensionCompatible(manifest, appVersion)) throw Error("Extension is not compatible with this Codex version");
+  return stageDir;
+}
+
+function replaceExtension(stageDir, entry) {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const id = ensureSafeExtensionID(entry.id);
+  const p = paths();
+  const destination = path.join(p.root, id);
+  const backup = path.join(p.root, `.${id}.backup-${Date.now()}`);
+  fs.mkdirSync(p.root, { recursive: true });
+  if (fs.existsSync(destination)) fs.renameSync(destination, backup);
+  fs.renameSync(stageDir, destination);
+  writeJson(receiptPath(destination), {
+    id,
+    version: entry.version ?? entry.latestVersion,
+    repo: entry.repo,
+    sha256: entry.sha256,
+    installedAt: new Date().toISOString(),
+  });
+  if (fs.existsSync(backup)) fs.rmSync(backup, { recursive: true, force: true });
+}
+
+async function installExtension(id, appVersion) {
+  const entry = await registryExtension(ensureSafeExtensionID(id));
+  if (!entry) throw Error("Extension not found");
+  if (!satisfiesVersionRange(appVersion, entry.codexVersionRange)) throw Error("Extension is not compatible with this Codex version");
+  const { tempDir, archivePath } = await downloadAsset(entry);
+  try {
+    replaceExtension(unpackExtension(archivePath, entry, appVersion), entry);
+  } finally {
+    require("node:fs").rmSync(tempDir, { recursive: true, force: true });
+  }
+  return extensionCatalog(appVersion);
+}
+
+function uninstallExtension(id, appVersion) {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const safeID = ensureSafeExtensionID(id);
+  const destination = path.join(paths().root, safeID);
+  if (fs.existsSync(destination)) fs.rmSync(destination, { recursive: true, force: true });
+  return extensionCatalog(appVersion);
+}
+
+async function autoUpdateExtensions(appVersion) {
+  const catalog = await extensionCatalog(appVersion);
+  for (const extension of catalog.extensions) {
+    if (extension.autoUpdate && extension.canUpdate) {
+      await installExtension(extension.id, appVersion);
+    }
+  }
+}
+
+function setAutoUpdate(id, enabled) {
+  const p = paths();
+  const autoUpdates = readJson(p.autoUpdates) ?? {};
+  autoUpdates[ensureSafeExtensionID(id)] = !!enabled;
+  writeJson(p.autoUpdates, autoUpdates);
 }
 
 function setEnabled(id, enabled, appVersion) {
@@ -97,7 +325,7 @@ function setEnabled(id, enabled, appVersion) {
 
 function runtimeModules(appVersion) {
   return discover(appVersion)
-    .filter((extension) => extension.enabled && !extension.internal)
+    .filter((extension) => extension.enabled && (!extension.internal || extension.id === "extensions-manager"))
     .map((extension) => ({
       extension: publicExtension(extension),
       preloadSource: readText(entryPath(extension, extension.preload)),
@@ -181,6 +409,28 @@ function activate(context) {
     if (!isTrustedIpcEvent(event)) throw Error("Untrusted sender");
     return setEnabled(id, enabled, appVersion);
   });
+  electron.ipcMain.handle("codex_desktop:extensions-catalog", async (event) => {
+    if (!isTrustedIpcEvent(event)) throw Error("Untrusted sender");
+    return extensionCatalog(appVersion);
+  });
+  electron.ipcMain.handle("codex_desktop:extensions-check-updates", async (event) => {
+    if (!isTrustedIpcEvent(event)) throw Error("Untrusted sender");
+    await autoUpdateExtensions(appVersion);
+    return extensionCatalog(appVersion);
+  });
+  electron.ipcMain.handle("codex_desktop:extensions-install", async (event, id) => {
+    if (!isTrustedIpcEvent(event)) throw Error("Untrusted sender");
+    return installExtension(id, appVersion);
+  });
+  electron.ipcMain.handle("codex_desktop:extensions-uninstall", async (event, id) => {
+    if (!isTrustedIpcEvent(event)) throw Error("Untrusted sender");
+    return uninstallExtension(id, appVersion);
+  });
+  electron.ipcMain.handle("codex_desktop:extensions-set-auto-update", async (event, id, enabled) => {
+    if (!isTrustedIpcEvent(event)) throw Error("Untrusted sender");
+    setAutoUpdate(id, enabled);
+    return extensionCatalog(appVersion);
+  });
   electron.ipcMain.handle("codex_desktop:extensions-confirm-reload", async (event) => {
     if (!isTrustedIpcEvent(event)) throw Error("Untrusted sender");
     const window = electron.BrowserWindow.fromWebContents(event.sender);
@@ -204,13 +454,23 @@ function activate(context) {
     electron.app.exit(0);
   });
   electron.ipcMain.on("codex_desktop:extensions-runtime-modules", runtimeModulesHandler);
+  autoUpdateExtensions(appVersion).catch((error) => console.error("[codex-ext] auto-update failed", error));
+  const updateTimer = setInterval(() => {
+    autoUpdateExtensions(appVersion).catch((error) => console.error("[codex-ext] auto-update failed", error));
+  }, 6 * 60 * 60 * 1000);
   cleanup.add(() => {
     electron.ipcMain.removeHandler("codex_desktop:extensions-list");
     electron.ipcMain.removeHandler("codex_desktop:extensions-set-enabled");
+    electron.ipcMain.removeHandler("codex_desktop:extensions-catalog");
+    electron.ipcMain.removeHandler("codex_desktop:extensions-check-updates");
+    electron.ipcMain.removeHandler("codex_desktop:extensions-install");
+    electron.ipcMain.removeHandler("codex_desktop:extensions-uninstall");
+    electron.ipcMain.removeHandler("codex_desktop:extensions-set-auto-update");
     electron.ipcMain.removeHandler("codex_desktop:extensions-confirm-reload");
     electron.ipcMain.removeHandler("codex_desktop:extensions-relaunch");
     electron.ipcMain.off("codex_desktop:extensions-bootloader-preload-source", bootloaderPreloadHandler);
     electron.ipcMain.off("codex_desktop:extensions-runtime-modules", runtimeModulesHandler);
+    clearInterval(updateTimer);
   });
 
   for (const extension of discover(appVersion)) {

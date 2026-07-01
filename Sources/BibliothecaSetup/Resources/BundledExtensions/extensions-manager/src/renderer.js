@@ -4,24 +4,52 @@ function activate(context) {
 
   const state = {
     extensionsView: false,
+    rows: null,
+    loading: false,
+    error: null,
   };
 
   function textOf(node) {
     return (node?.textContent || "").trim();
   }
 
-  async function extensionRows() {
-    const result = await bridge?.codexExtensionsList?.();
-    const rows = Array.isArray(result?.extensions) ? result.extensions : [];
-    return rows.filter((extension) => extension.id !== "extensions-manager" && !extension.internal);
+  async function loadExtensions(options = {}) {
+    if (state.loading) return;
+    state.loading = true;
+    state.error = null;
+    renderExtensionsPage();
+    try {
+      const result = options.checkUpdates
+        ? await bridge?.codexExtensionsCheckUpdates?.()
+        : await bridge?.codexExtensionsCatalog?.();
+      const rows = Array.isArray(result?.extensions) ? result.extensions : [];
+      state.rows = rows.filter((extension) => extension.id !== "extensions-manager" && !extension.internal);
+    } catch (error) {
+      state.error = error?.message || "Failed to load extensions";
+    } finally {
+      state.loading = false;
+      renderExtensionsPage();
+    }
   }
 
   function settingsContentRoot() {
     if (!document.querySelector("input[placeholder^='Search settings'], input[aria-label*='Search settings']")) {
       return null;
     }
-    return Array.from(document.querySelectorAll("div"))
-      .find((element) => String(element.className).includes("main-surface") && textOf(element).length > 0);
+    const headings = Array.from(document.querySelectorAll("h1, h2, [class*='heading']"))
+      .filter((element) => {
+        const text = textOf(element);
+        return text && !element.closest("button") && !element.querySelector("input");
+      });
+    for (const heading of headings) {
+      let current = heading.parentElement;
+      while (current && current !== document.body) {
+        if (current.querySelector("input[placeholder^='Search settings'], input[aria-label*='Search settings']")) break;
+        if (current.querySelectorAll("button, input, [role='switch']").length >= 2) return current;
+        current = current.parentElement;
+      }
+    }
+    return null;
   }
 
   function personalSettingsButtons() {
@@ -56,12 +84,12 @@ function activate(context) {
     headerText.className = "flex min-w-0 flex-1 flex-col gap-1";
     const title = document.createElement("div");
     title.className = "text-base font-medium text-token-text-primary";
-    title.textContent = "Installed";
+    title.textContent = "Extensions";
     headerText.append(title);
     header.append(headerText);
 
     const group = document.createElement("div");
-    group.className = "flex flex-col divide-y-[0.5px] divide-token-border overflow-hidden rounded-lg border border-token-border";
+    group.className = "flex flex-col divide-y-[0.5px] divide-token-border overflow-hidden rounded border border-token-border";
     group.style.backgroundColor = "var(--color-background-panel, var(--color-token-bg-fog))";
 
     section.append(header, group);
@@ -73,12 +101,12 @@ function activate(context) {
     const stateName = enabled ? "checked" : "unchecked";
     toggle.dataset.state = stateName;
     toggle.setAttribute("aria-checked", String(enabled));
-    const track = toggle.querySelector("[data-bibliothecas-switch-track='true']");
+    const track = toggle.querySelector("[data-codex-extensions-switch-track='true']");
     if (track) {
       track.dataset.state = stateName;
       track.className = `relative inline-flex h-5 w-8 shrink-0 items-center rounded-full transition-colors duration-200 ease-out ${enabled ? "bg-token-charts-blue" : "bg-token-foreground/10"}`;
     }
-    const thumb = toggle.querySelector("[data-bibliothecas-switch-thumb='true']");
+    const thumb = toggle.querySelector("[data-codex-extensions-switch-thumb='true']");
     if (thumb) {
       thumb.dataset.state = stateName;
     }
@@ -117,19 +145,65 @@ function activate(context) {
     return toggle;
   }
 
+  function createButton(label, disabled, action) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "rounded px-2 py-1 text-sm text-token-text-primary hover:bg-token-main-surface-secondary disabled:cursor-not-allowed disabled:opacity-40";
+    button.textContent = label;
+    button.disabled = !!disabled || state.loading;
+    button.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      button.disabled = true;
+      try {
+        await action();
+      } catch (error) {
+        state.error = error?.message || "Extension action failed";
+        renderExtensionsPage();
+      } finally {
+        button.disabled = !!disabled || state.loading;
+      }
+    });
+    return button;
+  }
+
+  function createAutoUpdateButton(extension) {
+    return createButton(extension.autoUpdate ? "Auto on" : "Auto", false, async () => {
+      const result = await bridge?.codexExtensionsSetAutoUpdate?.(extension.id, !extension.autoUpdate);
+      state.rows = Array.isArray(result?.extensions) ? result.extensions : state.rows;
+      renderExtensionsPage();
+    });
+  }
+
   function extensionDetail(extension) {
-    if (!extension.compatible && extension.codexAppVersion) return "";
-    return extension.version ? `Version ${extension.version}` : "";
+    if (!extension.compatible) return "Incompatible";
+    if (extension.updateAvailable) return `${extension.installedVersion} -> ${extension.latestVersion}`;
+    if (extension.installedVersion) return `Installed ${extension.installedVersion}`;
+    if (extension.latestVersion) return `Available ${extension.latestVersion}`;
+    return "";
   }
 
   function createCompatibilityWarning(extension) {
-    if (extension.compatible || !extension.codexAppVersion) return null;
+    if (extension.compatible) return null;
     const warning = document.createElement("span");
     warning.className = "inline-flex h-4 w-4 items-center justify-center text-xs text-token-text-tertiary";
-    warning.textContent = "⚠️";
-    warning.title = `Version mismatch: this extension was verified for Codex ${extension.codexAppVersion}.`;
+    warning.textContent = "!";
+    warning.title = extension.codexVersionRange
+      ? `Requires Codex ${extension.codexVersionRange}.`
+      : "This extension is not compatible with this Codex version.";
     warning.setAttribute("aria-label", warning.title);
     return warning;
+  }
+
+  async function mutateExtension(extension, action) {
+    const result = await bridge?.codexExtensionsConfirmReload?.();
+    if (!result?.confirmed) return;
+    if (action === "install" || action === "update") {
+      await bridge?.codexExtensionsInstall?.(extension.id);
+    } else if (action === "uninstall") {
+      await bridge?.codexExtensionsUninstall?.(extension.id);
+    }
+    await bridge?.codexExtensionsRelaunch?.();
   }
 
   function createExtensionRow(extension) {
@@ -168,7 +242,16 @@ function activate(context) {
     textWrap.append(column);
     const action = document.createElement("div");
     action.className = "flex shrink-0 items-center gap-2";
-    action.append(createSwitch(extension));
+    if (extension.installed) {
+      action.append(createSwitch(extension));
+      action.append(createAutoUpdateButton(extension));
+      if (extension.updateAvailable) {
+        action.append(createButton("Update", !extension.canUpdate, () => mutateExtension(extension, "update")));
+      }
+      action.append(createButton("Uninstall", !extension.canUninstall, () => mutateExtension(extension, "uninstall")));
+    } else {
+      action.append(createButton("Install", !extension.canInstall, () => mutateExtension(extension, "install")));
+    }
     row.append(textWrap, action);
     return row;
   }
@@ -180,7 +263,6 @@ function activate(context) {
       state.extensionsView = false;
       return;
     }
-    if (root.querySelector("[data-bibliothecas-settings='true']")) return;
     root.textContent = "";
     const scroller = document.createElement("div");
     scroller.className = "scrollbar-stable flex-1 overflow-y-auto p-panel";
@@ -194,13 +276,31 @@ function activate(context) {
     title.className = "electron:heading-lg heading-base truncate";
     title.textContent = "Extensions";
     headerText.append(title);
+    const refresh = createButton("Check", false, async () => {
+      await loadExtensions({ checkUpdates: true });
+    });
     header.append(headerText);
+    header.append(refresh);
     const { wrapper, group } = extensionSectionShell();
-    const rows = await extensionRows();
+    if (!state.rows && !state.loading) {
+      loadExtensions();
+    }
+    const rows = state.rows ?? [];
+    if (state.error) {
+      const error = document.createElement("div");
+      error.className = "mb-3 rounded bg-token-main-surface-secondary p-3 text-sm text-token-text-secondary";
+      error.textContent = state.error;
+      content.append(error);
+    }
     for (const extension of rows) {
       group.append(createExtensionRow(extension));
     }
-    if (rows.length === 0) {
+    if (state.loading) {
+      const loading = document.createElement("div");
+      loading.className = "p-3 text-sm text-token-text-secondary";
+      loading.textContent = "Loading";
+      group.append(loading);
+    } else if (rows.length === 0) {
       const empty = document.createElement("div");
       empty.className = "p-3 text-sm text-token-text-secondary";
       empty.textContent = "No extensions found";
@@ -213,7 +313,7 @@ function activate(context) {
 
   function renderExtensionsSidebarItem() {
     if (!settingsContentRoot()) return;
-    if (document.querySelector("[data-bibliothecas-sidebar='true']")) return;
+    if (document.querySelector("[data-codex-extensions-sidebar='true']")) return;
     const usage = personalSettingsButtons().find((button) => textOf(button) === "Usage & billing");
     if (!usage) return;
     const button = usage.cloneNode(true);
