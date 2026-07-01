@@ -388,7 +388,6 @@ function activate(context) {
       state.extensionsView = false;
     }
     renderExtensionsSidebarItem();
-    renderExtensionsPage();
   }
 
   const observer = new MutationObserver(tick);
