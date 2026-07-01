@@ -191,6 +191,17 @@ function activate(context) {
     return button;
   }
 
+  function createIconButton(label, disabled, action) {
+    const button = createButton("", disabled, action);
+    button.setAttribute("aria-label", label);
+    button.title = label;
+    button.className = state.actionButtonClass
+      ? `${state.actionButtonClass} h-7 w-7 px-0`
+      : "inline-flex h-7 w-7 items-center justify-center rounded bg-token-main-surface-secondary text-token-text-primary hover:bg-token-main-surface-tertiary disabled:cursor-not-allowed disabled:opacity-40";
+    button.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="icon-sm" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>';
+    return button;
+  }
+
   function extensionDetail(extension) {
     if (!extension.compatible) return "Incompatible";
     if (extension.updateAvailable) return `${extension.installedVersion} -> ${extension.latestVersion}`;
@@ -299,7 +310,7 @@ function activate(context) {
     title.className = "electron:heading-lg heading-base truncate";
     title.textContent = "Extensions";
     headerText.append(title);
-    const refresh = createButton("Check", false, async () => {
+    const refresh = createIconButton("Check for updates", false, async () => {
       await loadExtensions({ checkUpdates: true });
     });
     header.append(headerText);
