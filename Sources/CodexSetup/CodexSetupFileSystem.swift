@@ -9,6 +9,7 @@ protocol CodexSetupFileSystem: Sendable {
     func removeItem(at url: URL) throws
     func moveItem(at sourceURL: URL, to destinationURL: URL) throws
     func copyItem(at sourceURL: URL, to destinationURL: URL) throws
+    func replaceItem(at originalItemURL: URL, withItemAt newItemURL: URL, backupItemName: String?) throws
     func contentsOfDirectory(at url: URL) throws -> [URL]
 }
 
@@ -60,11 +61,15 @@ final class LocalCodexSetupFileSystem: CodexSetupFileSystem, @unchecked Sendable
         try self.fileManager.copyItem(at: sourceURL, to: destinationURL)
     }
 
+    func replaceItem(at originalItemURL: URL, withItemAt newItemURL: URL, backupItemName: String?) throws {
+        _ = try self.fileManager.replaceItemAt(originalItemURL, withItemAt: newItemURL, backupItemName: backupItemName)
+    }
+
     func contentsOfDirectory(at url: URL) throws -> [URL] {
         try self.fileManager.contentsOfDirectory(
             at: url,
             includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles]
+            options: []
         )
     }
 }

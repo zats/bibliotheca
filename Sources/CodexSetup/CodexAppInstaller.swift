@@ -25,6 +25,7 @@ struct CodexAppInstaller: Sendable {
         }
 
         await progress(CodexRestoreProgress(phase: .preparing, fraction: 0.02, detail: "Preparing restore"))
+        try? self.cleanStaleTemporaryInstallDirectories()
         let temporaryRoot = try self.makeTemporaryDirectory()
         defer { try? self.fileSystem.removeItem(at: temporaryRoot) }
 
@@ -35,26 +36,37 @@ struct CodexAppInstaller: Sendable {
 
         await progress(CodexRestoreProgress(phase: .extracting, fraction: 0.68, detail: "Extracting Codex"))
         let cleanAppURL = try await self.extractApp(from: downloadedURL, temporaryRoot: temporaryRoot, progress: progress)
-        let oldAppURL = temporaryRoot.appending(path: "OldCodex.app", directoryHint: .isDirectory)
-        if self.fileSystem.directoryExists(at: appURL) {
-            await progress(CodexRestoreProgress(phase: .replacing, fraction: 0.88, detail: "Backing up current app"))
-            try self.fileSystem.moveItem(at: appURL, to: oldAppURL)
-        }
+        let stagingRootURL = self.stagingRootURL(for: appURL)
+        let stagedAppURL = stagingRootURL.appending(path: appURL.lastPathComponent, directoryHint: .isDirectory)
+        try self.cleanStaleRestoreItems(appURL: appURL, stagingRootURL: stagingRootURL)
+        await progress(CodexRestoreProgress(phase: .replacing, fraction: 0.88, detail: "Staging clean Codex"))
+        try self.fileSystem.copyItem(at: cleanAppURL, to: stagedAppURL)
 
-        do {
+        if self.fileSystem.directoryExists(at: appURL) {
+            let backupName = ".codex-extension-restore-backup-\(UUID().uuidString).app"
             await progress(CodexRestoreProgress(phase: .replacing, fraction: 0.94, detail: "Installing clean Codex"))
-            try self.fileSystem.copyItem(at: cleanAppURL, to: appURL)
-        } catch {
-            if self.fileSystem.directoryExists(at: oldAppURL) {
-                try? self.fileSystem.moveItem(at: oldAppURL, to: appURL)
-            }
-            throw error
+            try self.fileSystem.replaceItem(at: appURL, withItemAt: stagedAppURL, backupItemName: backupName)
+            let backupURL = appURL.deletingLastPathComponent().appending(path: backupName, directoryHint: .isDirectory)
+            try? self.fileSystem.removeItem(at: backupURL)
+        } else {
+            await progress(CodexRestoreProgress(phase: .replacing, fraction: 0.94, detail: "Installing clean Codex"))
+            try self.fileSystem.moveItem(at: stagedAppURL, to: appURL)
         }
+        try? self.fileSystem.removeItem(at: stagingRootURL)
         await progress(CodexRestoreProgress(phase: .cleaningUp, fraction: 0.98, detail: "Cleaning up"))
         await progress(CodexRestoreProgress(phase: .complete, fraction: 1, detail: "Restore complete"))
     }
 
     private func download(_ sourceURL: URL, to destinationURL: URL, progress: CodexRestoreProgressHandler) async throws {
+        if let aria2URL = self.aria2ExecutableURL() {
+            try await self.downloadWithAria2(sourceURL, to: destinationURL, aria2URL: aria2URL, progress: progress)
+            return
+        }
+
+        try await self.downloadWithURLSession(sourceURL, to: destinationURL, progress: progress)
+    }
+
+    private func downloadWithURLSession(_ sourceURL: URL, to destinationURL: URL, progress: CodexRestoreProgressHandler) async throws {
         let (bytes, response) = try await self.urlSession.bytes(from: sourceURL)
         let expectedBytes = response.expectedContentLength
         FileManager.default.createFile(atPath: destinationURL.path, contents: nil)
@@ -82,7 +94,72 @@ struct CodexAppInstaller: Sendable {
         await progress(CodexRestoreProgress(phase: .downloading, fraction: 0.65, detail: "Download complete"))
     }
 
-    private func reportDownloadProgress(downloadedBytes: Int64, expectedBytes: Int64, progress: CodexRestoreProgressHandler) async {
+    private func downloadWithAria2(
+        _ sourceURL: URL,
+        to destinationURL: URL,
+        aria2URL: URL,
+        progress: CodexRestoreProgressHandler
+    ) async throws {
+        let expectedBytes = (try? await self.expectedContentLength(for: sourceURL)) ?? 0
+        let process = Process()
+        let outputPipe = Pipe()
+        process.executableURL = aria2URL
+        process.arguments = [
+            "--allow-overwrite=true",
+            "--auto-file-renaming=false",
+            "--continue=false",
+            "--console-log-level=warn",
+            "--dir", destinationURL.deletingLastPathComponent().path,
+            "--download-result=hide",
+            "--file-allocation=none",
+            "--max-connection-per-server=8",
+            "--min-split-size=8M",
+            "--out", destinationURL.lastPathComponent,
+            "--show-console-readout=false",
+            "--split=8",
+            sourceURL.absoluteString,
+        ]
+        process.standardOutput = outputPipe
+        process.standardError = outputPipe
+
+        await progress(CodexRestoreProgress(phase: .downloading, fraction: 0.05, detail: "Downloading Codex with aria2c"))
+        try process.run()
+
+        do {
+            while process.isRunning {
+                try Task.checkCancellation()
+                await self.reportDownloadProgress(downloadedBytes: self.fileSize(at: destinationURL), expectedBytes: expectedBytes, progress: progress, suffix: " (aria2c)")
+                try await Task.sleep(for: .milliseconds(500))
+            }
+        } catch {
+            if process.isRunning {
+                process.terminate()
+            }
+            throw error
+        }
+
+        let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else {
+            let output = String(data: data, encoding: .utf8) ?? ""
+            throw CodexSetupError.processFailed(executable: aria2URL.path, status: process.terminationStatus, output: output)
+        }
+        await progress(CodexRestoreProgress(phase: .downloading, fraction: 0.65, detail: "Download complete"))
+    }
+
+    private func expectedContentLength(for sourceURL: URL) async throws -> Int64 {
+        var request = URLRequest(url: sourceURL)
+        request.httpMethod = "HEAD"
+        let (_, response) = try await self.urlSession.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              200..<300 ~= httpResponse.statusCode
+        else {
+            throw CodexSetupError.updateDownloadInvalid(sourceURL)
+        }
+        return response.expectedContentLength
+    }
+
+    private func reportDownloadProgress(downloadedBytes: Int64, expectedBytes: Int64, progress: CodexRestoreProgressHandler, suffix: String = "") async {
         guard expectedBytes > 0 else {
             await progress(CodexRestoreProgress(phase: .downloading, fraction: 0.12, detail: "Downloading Codex"))
             return
@@ -93,8 +170,46 @@ struct CodexAppInstaller: Sendable {
         await progress(CodexRestoreProgress(
             phase: .downloading,
             fraction: totalFraction,
-            detail: "Downloading \(Self.byteCount(downloadedBytes)) of \(Self.byteCount(expectedBytes))"
+            detail: "Downloading \(Self.byteCount(downloadedBytes)) of \(Self.byteCount(expectedBytes))\(suffix)"
         ))
+    }
+
+    private func aria2ExecutableURL() -> URL? {
+        let pathCandidates = self.environmentPathCandidates()
+            + [
+                Bundle.main.resourceURL?.appending(path: "aria2c").path,
+                Bundle.module.resourceURL?.appending(path: "aria2c").path,
+                "/opt/homebrew/bin/aria2c",
+                "/usr/local/bin/aria2c",
+            ].compactMap { $0 }
+        return pathCandidates
+            .map { URL(filePath: $0) }
+            .first { FileManager.default.isExecutableFile(atPath: $0.path) }
+    }
+
+    private func environmentPathCandidates() -> [String] {
+        (ProcessInfo.processInfo.environment["PATH"] ?? "")
+            .split(separator: ":")
+            .map { URL(filePath: String($0)).appending(path: "aria2c").path }
+    }
+
+    private func fileSize(at url: URL) -> Int64 {
+        let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+        return attributes?[.size] as? Int64 ?? 0
+    }
+
+    private func stagingRootURL(for appURL: URL) -> URL {
+        appURL.deletingLastPathComponent().appending(path: ".codex-extension-restore", directoryHint: .isDirectory)
+    }
+
+    private func cleanStaleRestoreItems(appURL: URL, stagingRootURL: URL) throws {
+        try self.fileSystem.removeItem(at: stagingRootURL)
+        let appDirectoryURL = appURL.deletingLastPathComponent()
+        for itemURL in try self.fileSystem.contentsOfDirectory(at: appDirectoryURL) {
+            if itemURL.lastPathComponent.hasPrefix(".codex-extension-restore-backup-") {
+                try self.fileSystem.removeItem(at: itemURL)
+            }
+        }
     }
 
     private func extractApp(from archiveURL: URL, temporaryRoot: URL, progress: CodexRestoreProgressHandler) async throws -> URL {
@@ -180,6 +295,15 @@ struct CodexAppInstaller: Sendable {
             .appending(path: "codex-extension-install-\(UUID().uuidString)", directoryHint: .isDirectory)
         try self.fileSystem.createDirectory(at: root)
         return root
+    }
+
+    private func cleanStaleTemporaryInstallDirectories() throws {
+        let root = URL(filePath: NSTemporaryDirectory(), directoryHint: .isDirectory)
+        for itemURL in try self.fileSystem.contentsOfDirectory(at: root) {
+            if itemURL.lastPathComponent.hasPrefix("codex-extension-install-") {
+                try self.fileSystem.removeItem(at: itemURL)
+            }
+        }
     }
 
     private static func byteCount(_ value: Int64) -> String {
