@@ -36,17 +36,18 @@ targets:
         excludes:
           - Resources/BundledExtensions/**
           - Resources/BundledSkills/**
-      - path: Sources/CodexSetup/Resources/BundledExtensions
-        createIntermediateGroups: true
-        type: folder
-        buildPhase: resources
-      - path: Sources/CodexSetup/Resources/BundledSkills
-        createIntermediateGroups: true
-        type: folder
-        buildPhase: resources
     dependencies:
       - package: xxHash.swift
         product: xxHash
+    postBuildScripts:
+      - name: Copy bundled setup resources
+        basedOnDependencyAnalysis: false
+        script: |
+          set -euo pipefail
+          resources_dir="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH"
+          mkdir -p "$resources_dir"
+          ditto "$SRCROOT/Sources/CodexSetup/Resources/BundledExtensions" "$resources_dir/BundledExtensions"
+          ditto "$SRCROOT/Sources/CodexSetup/Resources/BundledSkills" "$resources_dir/BundledSkills"
     info:
       path: Generated/CodexSetup-Info.plist
       properties:
