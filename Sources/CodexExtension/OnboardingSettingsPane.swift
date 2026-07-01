@@ -11,6 +11,7 @@ struct OnboardingSettingsPane: View {
 
     var body: some View {
         let plan = self.session.plan
+        let onboardingSteps = plan.steps.filter { $0.id != "permissions" }
 
         ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: 14) {
@@ -21,6 +22,15 @@ struct OnboardingSettingsPane: View {
                         Task { await self.refresh(checkForUpdates: true) }
                     }
                 )
+
+                if let permissionStep = plan.steps.first(where: { $0.id == "permissions" }) {
+                    PermissionsSection(
+                        step: permissionStep,
+                        action: .openAppManagementSettings,
+                        appManagementButtonFrame: self.$appManagementButtonFrame,
+                        runAction: self.run
+                    )
+                }
 
                 if self.session.snapshot?.patchState == .patched {
                     RestoreCodexSection(
@@ -47,7 +57,7 @@ struct OnboardingSettingsPane: View {
 
                 SettingsSection("Onboarding") {
                     VStack(alignment: .leading, spacing: 0) {
-                        ForEach(plan.steps) { step in
+                        ForEach(onboardingSteps) { step in
                             OnboardingStepRow(
                                 step: step,
                                 isActive: step.id == plan.activeStepID,
@@ -60,7 +70,7 @@ struct OnboardingSettingsPane: View {
                                 },
                                 clearError: self.session.clearError
                             )
-                            if step.id != plan.steps.last?.id {
+                            if step.id != onboardingSteps.last?.id {
                                 Divider()
                                     .padding(.leading, 28)
                             }
@@ -134,6 +144,38 @@ struct OnboardingSettingsPane: View {
         panel.directoryURL = URL(filePath: "/Applications", directoryHint: .isDirectory)
         panel.message = "Select Codex.app"
         return panel.runModal() == .OK ? panel.url : nil
+    }
+}
+
+struct PermissionsSection: View {
+    let step: CodexOnboardingStep
+    let action: CodexSetupRecommendedAction
+    @Binding var appManagementButtonFrame: CGRect
+    let runAction: (CodexSetupRecommendedAction) -> Void
+
+    var body: some View {
+        SettingsSection("Permissions") {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("App Management")
+                        .font(.body.weight(.medium))
+                    Text(self.step.detail)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                if self.step.status != .complete {
+                    Button(self.action.buttonTitle) {
+                        self.runAction(self.action)
+                    }
+                    .controlSize(.small)
+                    .background(ScreenFrameReader(frameInScreen: self.$appManagementButtonFrame))
+                }
+            }
+            .padding(.vertical, 10)
+        }
     }
 }
 

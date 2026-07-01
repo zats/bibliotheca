@@ -365,4 +365,26 @@ struct CodexOnboardingPlanTests {
             "https://example.com/Codex-26.622.10000.zip",
         ])
     }
+
+    @Test
+    func sparkleAppcastIgnoresDeltaEnclosuresForRestore() throws {
+        let xml = """
+        <rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+          <channel>
+            <item>
+              <title>26.623.70822</title>
+              <sparkle:shortVersionString>26.623.70822</sparkle:shortVersionString>
+              <enclosure url="https://example.com/Codex-darwin-arm64-26.623.70822.zip" />
+              <sparkle:deltas>
+                <enclosure url="https://example.com/Codex4559-4441-arm64.delta" sparkle:deltaFrom="4441" />
+              </sparkle:deltas>
+            </item>
+          </channel>
+        </rss>
+        """
+
+        let update = try #require(try SparkleAppcastParser().latestUpdate(from: Data(xml.utf8)))
+
+        #expect(update.downloadURL?.absoluteString == "https://example.com/Codex-darwin-arm64-26.623.70822.zip")
+    }
 }

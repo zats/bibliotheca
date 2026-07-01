@@ -26,6 +26,7 @@ struct CodexAppInstaller: Sendable {
         let downloadedURL = temporaryRoot.appending(path: downloadURL.lastPathComponent.isEmpty ? "CodexUpdate" : downloadURL.lastPathComponent)
         let (temporaryDownloadURL, _) = try await self.urlSession.download(from: downloadURL)
         try self.fileSystem.moveItem(at: temporaryDownloadURL, to: downloadedURL)
+        try self.validateArchive(at: downloadedURL, downloadURL: downloadURL)
 
         let cleanAppURL = try self.extractApp(from: downloadedURL, temporaryRoot: temporaryRoot)
         let oldAppURL = temporaryRoot.appending(path: "OldCodex.app", directoryHint: .isDirectory)
@@ -53,6 +54,23 @@ struct CodexAppInstaller: Sendable {
 
         _ = try self.processRunner.run("/usr/bin/ditto", arguments: ["-x", "-k", archiveURL.path, extractURL.path])
         return try self.findCodexApp(in: extractURL)
+    }
+
+    private func validateArchive(at archiveURL: URL, downloadURL: URL) throws {
+        let data = try self.fileSystem.readData(at: archiveURL)
+        if data.starts(with: [0x50, 0x4B, 0x03, 0x04])
+            || data.starts(with: [0x50, 0x4B, 0x05, 0x06])
+            || data.starts(with: [0x78, 0x01])
+            || data.starts(with: [0x78, 0x9C])
+            || data.starts(with: [0x78, 0xDA]) {
+            return
+        }
+
+        if archiveURL.pathExtension.lowercased() == "dmg" || data.contains(Data("koly".utf8)) {
+            return
+        }
+
+        throw CodexSetupError.updateDownloadInvalid(downloadURL)
     }
 
     private func extractDMG(_ dmgURL: URL, temporaryRoot: URL) throws -> URL {

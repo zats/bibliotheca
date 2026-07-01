@@ -32,6 +32,7 @@ final class SparkleAppcastParser: NSObject, XMLParserDelegate {
     private var itemVersion: String?
     private var itemDownloadURL: URL?
     private var isInItem = false
+    private var isInDeltas = false
     private var updates: [CodexUpdateInfo] = []
 
     func latestUpdate(from data: Data) throws -> CodexUpdateInfo? {
@@ -45,6 +46,7 @@ final class SparkleAppcastParser: NSObject, XMLParserDelegate {
         self.itemVersion = nil
         self.itemDownloadURL = nil
         self.isInItem = false
+        self.isInDeltas = false
         self.updates = []
 
         let parser = XMLParser(data: data)
@@ -79,7 +81,11 @@ final class SparkleAppcastParser: NSObject, XMLParserDelegate {
             self.itemDownloadURL = nil
         }
 
-        if elementName == "enclosure" {
+        if elementName.hasSuffix("deltas") {
+            self.isInDeltas = true
+        }
+
+        if elementName == "enclosure", !self.isInDeltas, self.attribute("deltaFrom", in: attributeDict) == nil {
             self.itemVersion = self.attribute("shortVersionString", in: attributeDict) ?? self.attribute("version", in: attributeDict)
             self.itemDownloadURL = self.attribute("url", in: attributeDict).flatMap(URL.init(string:))
         }
@@ -109,6 +115,10 @@ final class SparkleAppcastParser: NSObject, XMLParserDelegate {
                 self.updates.append(CodexUpdateInfo(version: version, downloadURL: self.itemDownloadURL))
             }
             self.isInItem = false
+        }
+
+        if elementName.hasSuffix("deltas") {
+            self.isInDeltas = false
         }
 
         self.currentElement = ""

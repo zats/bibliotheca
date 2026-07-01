@@ -16,6 +16,7 @@ struct CodexSetupCLI {
         var parser = ArgumentParser(arguments)
         let command = parser.command()
         let appURL = parser.option("--app").map { URL(filePath: $0, directoryHint: .isDirectory) }
+        let version = parser.option("--version")
         let runtime = CodexSetupRuntime()
 
         switch command {
@@ -37,8 +38,16 @@ struct CodexSetupCLI {
         case "restore-versions":
             let options = try await runtime.availableRestoreOptions(appURL: appURL)
             for option in options {
-                Swift.print(option.title)
+                Swift.print("\(option.title)\t\(option.downloadURL?.absoluteString ?? "missing-url")")
             }
+        case "restore-clean":
+            let options = try await runtime.availableRestoreOptions(appURL: appURL)
+            guard let option = version.flatMap({ requested in options.first { $0.version == requested } }) ?? options.first else {
+                throw CLIError.noRestoreVersion
+            }
+            Self.printProgress("restoring Codex \(option.version)")
+            try await runtime.restoreCleanCodex(option, appURL: appURL)
+            Swift.print("restored Codex \(option.version)")
         case "quit-codex":
             Self.printProgress("quitting Codex")
             try await runtime.quitCodex(appURL: appURL)
@@ -129,6 +138,7 @@ struct CodexSetupCLI {
           patch
           rollback
           restore-versions
+          restore-clean [--version version]
           quit-codex
           launch-codex
           repair
@@ -176,11 +186,14 @@ private struct ArgumentParser {
 
 private enum CLIError: LocalizedError {
     case unknownCommand(String)
+    case noRestoreVersion
 
     var errorDescription: String? {
         switch self {
         case .unknownCommand(let command):
             "Unknown command: \(command)"
+        case .noRestoreVersion:
+            "No restore version is available."
         }
     }
 }

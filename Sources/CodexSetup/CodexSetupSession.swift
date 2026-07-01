@@ -46,6 +46,7 @@ public final class CodexSetupSession {
             appURL: self.selectedAppURL,
             checkForUpdates: checkForUpdates
         )
+        self.clearResolvedRestoreError()
         self.isRefreshing = false
     }
 
@@ -115,6 +116,25 @@ public final class CodexSetupSession {
 
     public func clearRestoreError() {
         self.restoreErrorMessage = nil
+    }
+
+    private func clearResolvedRestoreError() {
+        guard let restoreErrorMessage else {
+            return
+        }
+
+        if restoreErrorMessage == "Quit Codex, then retry.", self.snapshot?.isCodexRunning == false {
+            self.restoreErrorMessage = nil
+        }
+        if restoreErrorMessage == "Quit Codex before restore.", self.snapshot?.isCodexRunning == false {
+            self.restoreErrorMessage = nil
+        }
+        if restoreErrorMessage == "Allow App Management before restore.", self.snapshot?.appManagementPermissionGranted == true {
+            self.restoreErrorMessage = nil
+        }
+        if restoreErrorMessage == "Confirm Codex before restore.", self.snapshot?.appIdentity != nil {
+            self.restoreErrorMessage = nil
+        }
     }
 
     public func loadRestoreOptions() async {

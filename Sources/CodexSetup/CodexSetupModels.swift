@@ -193,6 +193,7 @@ enum CodexSetupError: LocalizedError {
     case invalidExtensionManifest(URL)
     case updateFeedMissing
     case updateFeedMalformed
+    case updateDownloadInvalid(URL)
     case asarToolMissing
     case patchPatternMissing(String)
     case processFailed(executable: String, status: Int32, output: String)
@@ -214,6 +215,8 @@ enum CodexSetupError: LocalizedError {
             "Codex update feed is missing."
         case .updateFeedMalformed:
             "Codex update feed is malformed."
+        case .updateDownloadInvalid(let url):
+            "Downloaded Codex update is not a valid archive: \(url.absoluteString)"
         case .asarToolMissing:
             "asar tool is missing."
         case .patchPatternMissing(let description):
