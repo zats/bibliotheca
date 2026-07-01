@@ -109,11 +109,13 @@ struct CodexSetupService: Sendable {
     }
 
     func patchCodex(appURL: URL, appIdentity: CodexAppIdentity) throws {
-        if (try? self.patchInspector.isPatched(appURL: appURL)) == true {
-            return
-        }
         guard !self.appProcessController.isRunning(appURL: appURL, bundleIdentifier: appIdentity.bundleIdentifier) else {
             throw CodexSetupError.codexStillRunning
+        }
+        try self.installBundledExtensionsDisabled(for: appIdentity)
+
+        if (try? self.patchInspector.isPatched(appURL: appURL)) == true {
+            return
         }
 
         let result = try self.appPatcher.patch(
@@ -255,9 +257,6 @@ struct CodexSetupService: Sendable {
             }
             return .repairFromLatestCodex
         case .updatedAfterProvisioning:
-            if !extensionStatus.exists || !extensionStatus.requiredExtensionsEnabled {
-                return .installExtensionStore
-            }
             if appManagementPermissionGranted == false {
                 return .openAppManagementSettings
             }
@@ -267,7 +266,13 @@ struct CodexSetupService: Sendable {
             return .confirmAutomaticPatchAfterCodexUpdate
         case .patched:
             if !extensionStatus.exists || !extensionStatus.requiredExtensionsEnabled {
-                return .installExtensionStore
+                if appManagementPermissionGranted == false {
+                    return .openAppManagementSettings
+                }
+                if isCodexRunning {
+                    return .quitCodex
+                }
+                return .patchCodex
             }
             if let latestUpdate, latestUpdate.version != currentVersion {
                 if appManagementPermissionGranted == false {
@@ -280,9 +285,6 @@ struct CodexSetupService: Sendable {
             }
             return isCodexRunning ? .ready : .launchCodex
         case .clean:
-            if !extensionStatus.exists || !extensionStatus.allUserExtensionsDisabled || !extensionStatus.requiredExtensionsEnabled {
-                return .installExtensionStore
-            }
             if appManagementPermissionGranted == false {
                 return .openAppManagementSettings
             }

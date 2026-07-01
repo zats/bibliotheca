@@ -60,7 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.autosaveName = "codex-extension"
 
         if let button = statusItem.button {
-            button.image = NSImage(systemSymbolName: "puzzlepiece.extension", accessibilityDescription: "Codex Extension")
+            button.image = NSImage(systemSymbolName: "puzzlepiece.extension.fill", accessibilityDescription: "Codex Extension")
             button.image?.isTemplate = true
             button.toolTip = "Codex Extension"
         }

@@ -8,7 +8,7 @@ struct CodexOnboardingPlanTests {
     func pendingPlanHasNoUIRequirement() {
         let plan = CodexOnboardingPlan(snapshot: nil, errorMessage: nil)
 
-        #expect(plan.steps.map(\.id) == ["codex", "extensions", "permissions", "codexRunning", "patch", "updates", "ready"])
+        #expect(plan.steps.map(\.id) == ["codex", "permissions", "codexRunning", "patch", "updates", "ready"])
         #expect(plan.activeStepID == "codex")
         #expect(plan.activeAction == nil)
     }
@@ -41,7 +41,6 @@ struct CodexOnboardingPlanTests {
         #expect(plan.activeStepID == "patch")
         #expect(plan.activeAction == .patchCodex)
         #expect(plan.steps.first { $0.id == "codex" }?.status == .complete)
-        #expect(plan.steps.first { $0.id == "extensions" }?.status == .complete)
         #expect(plan.steps.first { $0.id == "patch" }?.status == .needsAction)
     }
 
@@ -57,7 +56,7 @@ struct CodexOnboardingPlanTests {
     }
 
     @Test
-    func enabledUserExtensionsShowEnabledCount() {
+    func enabledUserExtensionsActivatePatch() {
         let snapshot = CodexSetupSnapshot(
             appURL: URL(filePath: "/Applications/Codex.app"),
             appIdentity: CodexAppIdentity(
@@ -76,14 +75,14 @@ struct CodexOnboardingPlanTests {
                 disabledExtensionIDs: []
             ),
             latestCodexUpdate: nil,
-            recommendedAction: .installExtensionStore
+            recommendedAction: .patchCodex
         )
 
         let plan = CodexOnboardingPlan(snapshot: snapshot, errorMessage: nil)
 
-        #expect(plan.activeStepID == "extensions")
-        #expect(plan.activeAction == .installExtensionStore)
-        #expect(plan.steps.first { $0.id == "extensions" }?.detail == "2 enabled")
+        #expect(plan.activeStepID == "patch")
+        #expect(plan.activeAction == .patchCodex)
+        #expect(plan.steps.first { $0.id == "patch" }?.detail == "Clean app")
     }
 
     @Test
@@ -169,7 +168,7 @@ struct CodexOnboardingPlanTests {
     }
 
     @Test
-    func disabledExtensionsManagerActivatesExtensionStoreRepair() {
+    func disabledExtensionsManagerActivatesPatch() {
         let snapshot = CodexSetupSnapshot(
             appURL: URL(filePath: "/Applications/Codex.app"),
             appIdentity: CodexAppIdentity(
@@ -190,14 +189,14 @@ struct CodexOnboardingPlanTests {
                 disabledRequiredExtensionIDs: ["extensions-manager"]
             ),
             latestCodexUpdate: nil,
-            recommendedAction: .installExtensionStore
+            recommendedAction: .patchCodex
         )
 
         let plan = CodexOnboardingPlan(snapshot: snapshot, errorMessage: nil)
 
-        #expect(plan.activeStepID == "extensions")
-        #expect(plan.activeAction == .installExtensionStore)
-        #expect(plan.steps.first { $0.id == "extensions" }?.detail == "Enable manager")
+        #expect(plan.activeStepID == "permissions")
+        #expect(plan.activeAction == .openAppManagementSettings)
+        #expect(plan.steps.first { $0.id == "patch" }?.detail == "Prepare Codex")
     }
 
     @Test
@@ -287,7 +286,6 @@ struct CodexOnboardingPlanTests {
 
         #expect(plan.activeStepID == "permissions")
         #expect(plan.activeAction == .openAppManagementSettings)
-        #expect(plan.steps.first { $0.id == "extensions" }?.status == .complete)
         #expect(plan.steps.first { $0.id == "permissions" }?.status == .needsAction)
     }
 

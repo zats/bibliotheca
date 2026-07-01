@@ -82,7 +82,6 @@ extension CodexOnboardingPlan {
         guard let snapshot else {
             return [
                 CodexOnboardingStep(id: "codex", title: "Codex", detail: "Checking installation", status: .pending),
-                CodexOnboardingStep(id: "extensions", title: "Extensions", detail: "Waiting for Codex", status: .pending),
                 CodexOnboardingStep(id: "permissions", title: "Permissions", detail: "Waiting for Codex", status: .pending),
                 CodexOnboardingStep(id: "codexRunning", title: "Codex", detail: "Waiting for Codex", status: .pending),
                 CodexOnboardingStep(id: "patch", title: "Patch", detail: "Waiting for Codex", status: .pending),
@@ -99,12 +98,6 @@ extension CodexOnboardingPlan {
                 status: snapshot.appIdentity == nil ? .blocked : .complete
             ),
             CodexOnboardingStep(
-                id: "extensions",
-                title: "Extensions",
-                detail: Self.extensionDetail(snapshot.extensionStoreStatus),
-                status: Self.extensionStatus(snapshot)
-            ),
-            CodexOnboardingStep(
                 id: "permissions",
                 title: "Permissions",
                 detail: Self.permissionDetail(snapshot),
@@ -119,8 +112,8 @@ extension CodexOnboardingPlan {
             CodexOnboardingStep(
                 id: "patch",
                 title: "Patch",
-                detail: Self.patchDetail(snapshot.patchState),
-                status: Self.patchStatus(snapshot.patchState)
+                detail: Self.patchDetail(snapshot),
+                status: Self.patchStatus(snapshot)
             ),
             CodexOnboardingStep(
                 id: "updates",
@@ -144,40 +137,12 @@ extension CodexOnboardingPlan {
         return identity.version.displayString
     }
 
-    private static func extensionDetail(_ status: CodexExtensionStoreStatus) -> String {
-        if !status.exists {
-            return "Install bundled extensions disabled"
-        }
-
-        if !status.requiredExtensionsEnabled {
-            return "Enable manager"
-        }
-
-        if status.allUserExtensionsDisabled {
-            return "\(status.extensionIDs.count) disabled"
-        }
-
-        let enabledCount = status.extensionIDs.count - status.disabledExtensionIDs.count
-        return "\(enabledCount) enabled"
-    }
-
-    private static func extensionStatus(_ snapshot: CodexSetupSnapshot) -> CodexOnboardingStepStatus {
+    private static func patchDetail(_ snapshot: CodexSetupSnapshot) -> String {
         if !snapshot.extensionStoreStatus.exists || !snapshot.extensionStoreStatus.requiredExtensionsEnabled {
-            return .needsAction
+            return "Prepare Codex"
         }
 
         switch snapshot.patchState {
-        case .patched, .updatedAfterProvisioning:
-            return .complete
-        default:
-            break
-        }
-
-        return snapshot.extensionStoreStatus.allUserExtensionsDisabled ? .complete : .needsAction
-    }
-
-    private static func patchDetail(_ state: CodexPatchState) -> String {
-        switch state {
         case .missingApp:
             return "Codex not found"
         case .clean:
@@ -193,8 +158,12 @@ extension CodexOnboardingPlan {
         }
     }
 
-    private static func patchStatus(_ state: CodexPatchState) -> CodexOnboardingStepStatus {
-        switch state {
+    private static func patchStatus(_ snapshot: CodexSetupSnapshot) -> CodexOnboardingStepStatus {
+        if !snapshot.extensionStoreStatus.exists || !snapshot.extensionStoreStatus.requiredExtensionsEnabled {
+            return .needsAction
+        }
+
+        switch snapshot.patchState {
         case .patched:
             return .complete
         case .missingApp, .unknown, .damagedPatchedApp:
