@@ -1,6 +1,28 @@
 import Foundation
 
 struct CodexAppProcessController: Sendable {
+    private let terminator: CodexAppTerminator
+    private let processRunner: CodexProcessRunner
+
+    init(processRunner: CodexProcessRunner = CodexProcessRunner()) {
+        self.processRunner = processRunner
+        self.terminator = CodexAppTerminator(processRunner: processRunner)
+    }
+
+    func isRunning(appURL: URL, bundleIdentifier: String?) -> Bool {
+        self.terminator.isRunning(appURL: appURL, bundleIdentifier: bundleIdentifier)
+    }
+
+    func quit(appURL: URL, bundleIdentifier: String?) throws {
+        try self.terminator.quit(appURL: appURL, bundleIdentifier: bundleIdentifier)
+    }
+
+    func launch(appURL: URL) throws {
+        _ = try self.processRunner.run("/usr/bin/open", arguments: [appURL.path])
+    }
+}
+
+struct CodexAppTerminator: Sendable {
     private let processRunner: CodexProcessRunner
 
     init(processRunner: CodexProcessRunner = CodexProcessRunner()) {
@@ -42,10 +64,6 @@ struct CodexAppProcessController: Sendable {
         throw CodexSetupError.codexStillRunning
     }
 
-    func launch(appURL: URL) throws {
-        _ = try self.processRunner.run("/usr/bin/open", arguments: [appURL.path])
-    }
-
     private func waitUntilClosed(appURL: URL, bundleIdentifier: String?, timeout: TimeInterval) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
@@ -68,11 +86,11 @@ struct CodexAppProcessController: Sendable {
     }
 
     private func isRegisteredWithLaunchServices(bundleIdentifier: String?) -> Bool {
-        !self.launchServicesApplicationSpecifiers(bundleIdentifier: bundleIdentifier).isEmpty
+        !self.launchServicesApplicationSpecifiers(bundleIdentifier: bundleIdentifier, includeExitedApplications: false).isEmpty
     }
 
     private func killLaunchServicesApplication(bundleIdentifier: String?, hard: Bool) {
-        for applicationSpecifier in self.launchServicesApplicationSpecifiers(bundleIdentifier: bundleIdentifier) {
+        for applicationSpecifier in self.launchServicesApplicationSpecifiers(bundleIdentifier: bundleIdentifier, includeExitedApplications: true) {
             var arguments = ["kill", "-childapps", "-coalition", "-launchdjobs", "-force"]
             if hard {
                 arguments.append("-hard")
@@ -82,11 +100,13 @@ struct CodexAppProcessController: Sendable {
         }
     }
 
-    private func launchServicesApplicationSpecifiers(bundleIdentifier: String?) -> [String] {
+    private func launchServicesApplicationSpecifiers(bundleIdentifier: String?, includeExitedApplications: Bool) -> [String] {
         guard let bundleIdentifier, !bundleIdentifier.isEmpty,
               let result = try? self.processRunner.run(
                   "/usr/bin/lsappinfo",
-                  arguments: ["find", "--includeExitedApplications", "bundleid=\(bundleIdentifier)"]
+                  arguments: includeExitedApplications
+                    ? ["find", "--includeExitedApplications", "bundleid=\(bundleIdentifier)"]
+                    : ["find", "bundleid=\(bundleIdentifier)"]
               )
         else {
             return []
