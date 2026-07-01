@@ -15,26 +15,34 @@ struct CodexAppInstaller: Sendable {
         self.urlSession = urlSession
     }
 
-    func installCleanCodex(from update: CodexUpdateInfo, replacing appURL: URL) async throws {
+    func installCleanCodex(
+        from update: CodexUpdateInfo,
+        replacing appURL: URL,
+        progress: CodexRestoreProgressHandler = { _ in }
+    ) async throws {
         guard let downloadURL = update.downloadURL else {
             throw CodexSetupError.updateFeedMalformed
         }
 
+        await progress(CodexRestoreProgress(phase: .preparing, fraction: 0.02, detail: "Preparing restore"))
         let temporaryRoot = try self.makeTemporaryDirectory()
         defer { try? self.fileSystem.removeItem(at: temporaryRoot) }
 
         let downloadedURL = temporaryRoot.appending(path: downloadURL.lastPathComponent.isEmpty ? "CodexUpdate" : downloadURL.lastPathComponent)
-        let (temporaryDownloadURL, _) = try await self.urlSession.download(from: downloadURL)
-        try self.fileSystem.moveItem(at: temporaryDownloadURL, to: downloadedURL)
+        try await self.download(downloadURL, to: downloadedURL, progress: progress)
+        await progress(CodexRestoreProgress(phase: .validating, fraction: 0.66, detail: "Validating download"))
         try self.validateArchive(at: downloadedURL, downloadURL: downloadURL)
 
-        let cleanAppURL = try self.extractApp(from: downloadedURL, temporaryRoot: temporaryRoot)
+        await progress(CodexRestoreProgress(phase: .extracting, fraction: 0.68, detail: "Extracting Codex"))
+        let cleanAppURL = try await self.extractApp(from: downloadedURL, temporaryRoot: temporaryRoot, progress: progress)
         let oldAppURL = temporaryRoot.appending(path: "OldCodex.app", directoryHint: .isDirectory)
         if self.fileSystem.directoryExists(at: appURL) {
+            await progress(CodexRestoreProgress(phase: .replacing, fraction: 0.88, detail: "Backing up current app"))
             try self.fileSystem.moveItem(at: appURL, to: oldAppURL)
         }
 
         do {
+            await progress(CodexRestoreProgress(phase: .replacing, fraction: 0.94, detail: "Installing clean Codex"))
             try self.fileSystem.copyItem(at: cleanAppURL, to: appURL)
         } catch {
             if self.fileSystem.directoryExists(at: oldAppURL) {
@@ -42,22 +50,73 @@ struct CodexAppInstaller: Sendable {
             }
             throw error
         }
+        await progress(CodexRestoreProgress(phase: .cleaningUp, fraction: 0.98, detail: "Cleaning up"))
+        await progress(CodexRestoreProgress(phase: .complete, fraction: 1, detail: "Restore complete"))
     }
 
-    private func extractApp(from archiveURL: URL, temporaryRoot: URL) throws -> URL {
+    private func download(_ sourceURL: URL, to destinationURL: URL, progress: CodexRestoreProgressHandler) async throws {
+        let (bytes, response) = try await self.urlSession.bytes(from: sourceURL)
+        let expectedBytes = response.expectedContentLength
+        FileManager.default.createFile(atPath: destinationURL.path, contents: nil)
+        let handle = try FileHandle(forWritingTo: destinationURL)
+        defer { try? handle.close() }
+
+        var downloadedBytes: Int64 = 0
+        var buffer: [UInt8] = []
+        buffer.reserveCapacity(64 * 1024)
+        await progress(CodexRestoreProgress(phase: .downloading, fraction: 0.05, detail: "Downloading Codex"))
+
+        for try await byte in bytes {
+            buffer.append(byte)
+            downloadedBytes += 1
+            if buffer.count >= 64 * 1024 {
+                try handle.write(contentsOf: Data(buffer))
+                buffer.removeAll(keepingCapacity: true)
+                await self.reportDownloadProgress(downloadedBytes: downloadedBytes, expectedBytes: expectedBytes, progress: progress)
+            }
+        }
+
+        if !buffer.isEmpty {
+            try handle.write(contentsOf: Data(buffer))
+        }
+        await progress(CodexRestoreProgress(phase: .downloading, fraction: 0.65, detail: "Download complete"))
+    }
+
+    private func reportDownloadProgress(downloadedBytes: Int64, expectedBytes: Int64, progress: CodexRestoreProgressHandler) async {
+        guard expectedBytes > 0 else {
+            await progress(CodexRestoreProgress(phase: .downloading, fraction: 0.12, detail: "Downloading Codex"))
+            return
+        }
+
+        let downloadFraction = min(1, Double(downloadedBytes) / Double(expectedBytes))
+        let totalFraction = 0.05 + (downloadFraction * 0.60)
+        await progress(CodexRestoreProgress(
+            phase: .downloading,
+            fraction: totalFraction,
+            detail: "Downloading \(Self.byteCount(downloadedBytes)) of \(Self.byteCount(expectedBytes))"
+        ))
+    }
+
+    private func extractApp(from archiveURL: URL, temporaryRoot: URL, progress: CodexRestoreProgressHandler) async throws -> URL {
         let extractURL = temporaryRoot.appending(path: "extract", directoryHint: .isDirectory)
         try self.fileSystem.createDirectory(at: extractURL)
 
         if archiveURL.pathExtension.lowercased() == "dmg" {
-            return try self.extractDMG(archiveURL, temporaryRoot: temporaryRoot)
+            let appURL = try self.extractDMG(archiveURL, temporaryRoot: temporaryRoot)
+            await progress(CodexRestoreProgress(phase: .extracting, fraction: 0.85, detail: "Extracted Codex"))
+            return appURL
         }
 
         _ = try self.processRunner.run("/usr/bin/ditto", arguments: ["-x", "-k", archiveURL.path, extractURL.path])
-        return try self.findCodexApp(in: extractURL)
+        let appURL = try self.findCodexApp(in: extractURL)
+        await progress(CodexRestoreProgress(phase: .extracting, fraction: 0.85, detail: "Extracted Codex"))
+        return appURL
     }
 
     private func validateArchive(at archiveURL: URL, downloadURL: URL) throws {
-        let data = try self.fileSystem.readData(at: archiveURL)
+        let handle = try FileHandle(forReadingFrom: archiveURL)
+        let data = try handle.read(upToCount: 4096) ?? Data()
+        try handle.close()
         if data.starts(with: [0x50, 0x4B, 0x03, 0x04])
             || data.starts(with: [0x50, 0x4B, 0x05, 0x06])
             || data.starts(with: [0x78, 0x01])
@@ -66,7 +125,7 @@ struct CodexAppInstaller: Sendable {
             return
         }
 
-        if archiveURL.pathExtension.lowercased() == "dmg" || data.contains(Data("koly".utf8)) {
+        if archiveURL.pathExtension.lowercased() == "dmg" {
             return
         }
 
@@ -121,5 +180,9 @@ struct CodexAppInstaller: Sendable {
             .appending(path: "codex-extension-install-\(UUID().uuidString)", directoryHint: .isDirectory)
         try self.fileSystem.createDirectory(at: root)
         return root
+    }
+
+    private static func byteCount(_ value: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: value, countStyle: .file)
     }
 }

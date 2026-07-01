@@ -17,7 +17,7 @@ struct OnboardingSettingsPane: View {
             VStack(alignment: .leading, spacing: 14) {
                 OnboardingHeader(
                     isRefreshing: self.session.isRefreshing,
-                    isBusy: self.session.inProgressAction != nil,
+                    isBusy: self.session.inProgressAction != nil || self.session.isLoadingRestoreOptions || self.session.isRestoringCodex,
                     refresh: {
                         Task { await self.refresh(checkForUpdates: true) }
                     }
@@ -38,6 +38,7 @@ struct OnboardingSettingsPane: View {
                         selectedOptionID: self.$session.selectedRestoreOptionID,
                         isLoading: self.session.isLoadingRestoreOptions,
                         isRestoring: self.session.isRestoringCodex,
+                        progress: self.session.restoreProgress,
                         isCodexConfirmed: self.session.snapshot?.appIdentity != nil,
                         isCodexRunning: self.session.snapshot?.isCodexRunning == true,
                         canManageApps: self.session.snapshot?.appManagementPermissionGranted == true,
@@ -184,6 +185,7 @@ struct RestoreCodexSection: View {
     @Binding var selectedOptionID: CodexRestoreOption.ID?
     let isLoading: Bool
     let isRestoring: Bool
+    let progress: CodexRestoreProgress?
     let isCodexConfirmed: Bool
     let isCodexRunning: Bool
     let canManageApps: Bool
@@ -216,9 +218,26 @@ struct RestoreCodexSection: View {
 
                 Spacer()
 
-                if self.isLoading || self.isRestoring {
-                    ProgressView()
-                        .controlSize(.small)
+                if self.isLoading {
+                    VStack(alignment: .trailing, spacing: 5) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Loading versions")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } else if self.isRestoring, let progress {
+                    VStack(alignment: .trailing, spacing: 6) {
+                        Text("\(progress.percent)%")
+                            .font(.body.monospacedDigit().weight(.medium))
+                        ProgressView(value: progress.fraction)
+                            .frame(width: 230)
+                        Text(progress.detail)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.trailing)
+                    }
                 } else if self.options.isEmpty {
                     Button("Rollback", action: self.loadOptions)
                         .controlSize(.small)

@@ -46,7 +46,13 @@ struct CodexSetupCLI {
                 throw CLIError.noRestoreVersion
             }
             Self.printProgress("restoring Codex \(option.version)")
-            try await runtime.restoreCleanCodex(option, appURL: appURL)
+            try await runtime.restoreCleanCodex(
+                option,
+                appURL: appURL,
+                progress: { progress in
+                    FileHandle.standardError.write(Data("\(progress.percent)% \(progress.detail)\n".utf8))
+                }
+            )
             Swift.print("restored Codex \(option.version)")
         case "quit-codex":
             Self.printProgress("quitting Codex")

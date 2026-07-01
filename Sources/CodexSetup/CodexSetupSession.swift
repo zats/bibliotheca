@@ -12,6 +12,7 @@ public final class CodexSetupSession {
     public var selectedRestoreOptionID: CodexRestoreOption.ID?
     public var isLoadingRestoreOptions = false
     public var isRestoringCodex = false
+    public var restoreProgress: CodexRestoreProgress?
     public var restoreErrorMessage: String?
 
     private let runtime: CodexSetupRuntime
@@ -177,14 +178,29 @@ public final class CodexSetupSession {
         }
 
         self.restoreErrorMessage = nil
+        self.restoreProgress = CodexRestoreProgress(phase: .preparing, fraction: 0, detail: "Starting restore")
         self.isRestoringCodex = true
-        defer { self.isRestoringCodex = false }
+        defer {
+            self.isRestoringCodex = false
+            if self.restoreErrorMessage != nil {
+                self.restoreProgress = nil
+            }
+        }
 
         do {
-            try await self.runtime.restoreCleanCodex(selectedRestoreOption, appURL: self.selectedAppURL)
+            try await self.runtime.restoreCleanCodex(
+                selectedRestoreOption,
+                appURL: self.selectedAppURL,
+                progress: { progress in
+                    await MainActor.run {
+                        self.restoreProgress = progress
+                    }
+                }
+            )
             self.restoreOptions = []
             self.selectedRestoreOptionID = nil
             await self.refresh()
+            self.restoreProgress = nil
         } catch {
             self.restoreErrorMessage = error.localizedDescription
         }

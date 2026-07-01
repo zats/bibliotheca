@@ -49,13 +49,18 @@ public struct CodexSetupRuntime: Sendable {
         }
     }
 
-    public func restoreCleanCodex(_ option: CodexRestoreOption, appURL: URL? = nil) async throws {
+    public func restoreCleanCodex(
+        _ option: CodexRestoreOption,
+        appURL: URL? = nil,
+        progress: CodexRestoreProgressHandler = { _ in }
+    ) async throws {
         let snapshot = try await self.requiredSnapshot(appURL: appURL)
         let update = CodexUpdateInfo(version: option.version, downloadURL: option.downloadURL)
         try await self.service.restoreCleanCodex(
             from: update,
             appURL: snapshot.appURL,
-            appIdentity: snapshot.appIdentity
+            appIdentity: snapshot.appIdentity,
+            progress: progress
         )
     }
 

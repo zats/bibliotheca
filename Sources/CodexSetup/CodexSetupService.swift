@@ -161,7 +161,12 @@ struct CodexSetupService: Sendable {
         try self.fileSystem.removeItem(at: self.configuration.provisioningReceiptURL)
     }
 
-    func restoreCleanCodex(from update: CodexUpdateInfo, appURL: URL, appIdentity: CodexAppIdentity) async throws {
+    func restoreCleanCodex(
+        from update: CodexUpdateInfo,
+        appURL: URL,
+        appIdentity: CodexAppIdentity,
+        progress: CodexRestoreProgressHandler = { _ in }
+    ) async throws {
         guard !self.appProcessController.isRunning(appURL: appURL, bundleIdentifier: appIdentity.bundleIdentifier) else {
             throw CodexSetupError.codexStillRunning
         }
@@ -170,7 +175,7 @@ struct CodexSetupService: Sendable {
             throw CodexSetupError.appManagementPermissionRequired
         }
 
-        try await self.appInstaller.installCleanCodex(from: update, replacing: appURL)
+        try await self.appInstaller.installCleanCodex(from: update, replacing: appURL, progress: progress)
         try self.fileSystem.removeItem(at: self.configuration.provisioningReceiptURL)
     }
 

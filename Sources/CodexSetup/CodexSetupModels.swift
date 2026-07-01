@@ -109,6 +109,34 @@ public struct CodexRestoreOption: Identifiable, Equatable, Sendable {
     }
 }
 
+public enum CodexRestoreProgressPhase: String, Sendable {
+    case preparing
+    case downloading
+    case validating
+    case extracting
+    case replacing
+    case cleaningUp
+    case complete
+}
+
+public struct CodexRestoreProgress: Equatable, Sendable {
+    public var phase: CodexRestoreProgressPhase
+    public var fraction: Double
+    public var detail: String
+
+    public init(phase: CodexRestoreProgressPhase, fraction: Double, detail: String) {
+        self.phase = phase
+        self.fraction = min(1, max(0, fraction))
+        self.detail = detail
+    }
+
+    public var percent: Int {
+        Int((self.fraction * 100).rounded())
+    }
+}
+
+public typealias CodexRestoreProgressHandler = @Sendable (CodexRestoreProgress) async -> Void
+
 public enum CodexPatchState: Equatable, Sendable {
     case missingApp
     case clean
