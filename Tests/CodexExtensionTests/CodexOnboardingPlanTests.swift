@@ -49,11 +49,41 @@ struct CodexOnboardingPlanTests {
     func actionTitlesComeFromHeadlessActionModel() {
         #expect(CodexSetupRecommendedAction.openCodexDownloadPage.buttonTitle == "Download")
         #expect(CodexSetupRecommendedAction.selectCodexApp.buttonTitle == "Select")
-        #expect(CodexSetupRecommendedAction.installExtensionStore.buttonTitle == "Install")
+        #expect(CodexSetupRecommendedAction.installExtensionStore.buttonTitle == "Prepare")
         #expect(CodexSetupRecommendedAction.openAppManagementSettings.buttonTitle == "Allow")
         #expect(CodexSetupRecommendedAction.quitCodex.buttonTitle == "Quit")
         #expect(CodexSetupRecommendedAction.patchCodex.buttonTitle == "Patch")
         #expect(CodexSetupRecommendedAction.launchCodex.buttonTitle == "Launch Codex")
+    }
+
+    @Test
+    func enabledUserExtensionsShowEnabledCount() {
+        let snapshot = CodexSetupSnapshot(
+            appURL: URL(filePath: "/Applications/Codex.app"),
+            appIdentity: CodexAppIdentity(
+                bundleIdentifier: "com.openai.codex",
+                version: CodexAppVersion(shortVersion: "26.1"),
+                appASARSHA256: "abc",
+                updateFeedURL: nil
+            ),
+            patchState: .clean,
+            appManagementPermissionGranted: true,
+            isCodexRunning: false,
+            extensionStoreStatus: CodexExtensionStoreStatus(
+                exists: true,
+                bootloaderVersion: "26.1",
+                extensionIDs: ["accounts", "colors"],
+                disabledExtensionIDs: []
+            ),
+            latestCodexUpdate: nil,
+            recommendedAction: .installExtensionStore
+        )
+
+        let plan = CodexOnboardingPlan(snapshot: snapshot, errorMessage: nil)
+
+        #expect(plan.activeStepID == "extensions")
+        #expect(plan.activeAction == .installExtensionStore)
+        #expect(plan.steps.first { $0.id == "extensions" }?.detail == "2 enabled")
     }
 
     @Test

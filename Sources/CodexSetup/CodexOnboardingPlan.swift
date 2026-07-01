@@ -54,7 +54,7 @@ extension CodexSetupRecommendedAction {
         case .selectCodexApp:
             return "Select"
         case .installExtensionStore:
-            return "Install"
+            return "Prepare"
         case .openAppManagementSettings:
             return "Allow"
         case .quitCodex:
@@ -157,7 +157,8 @@ extension CodexOnboardingPlan {
             return "\(status.extensionIDs.count) disabled"
         }
 
-        return "\(status.extensionIDs.count) installed"
+        let enabledCount = status.extensionIDs.count - status.disabledExtensionIDs.count
+        return "\(enabledCount) enabled"
     }
 
     private static func extensionStatus(_ snapshot: CodexSetupSnapshot) -> CodexOnboardingStepStatus {
@@ -246,7 +247,7 @@ extension CodexOnboardingPlan {
         case .selectCodexApp:
             return "Select Codex.app"
         case .installExtensionStore:
-            return "Install extensions"
+            return "Prepare extensions"
         case .openAppManagementSettings:
             return "Allow App Management"
         case .quitCodex:
