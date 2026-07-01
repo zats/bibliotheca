@@ -8,10 +8,15 @@ function activate(context) {
     loading: false,
     error: null,
     actionButtonClass: null,
+    searchQuery: "",
   };
 
   function textOf(node) {
     return (node?.textContent || "").trim();
+  }
+
+  function normalizeSearch(value) {
+    return (value || "").trim().toLowerCase();
   }
 
   function localExtensionRow(extension) {
@@ -83,19 +88,31 @@ function activate(context) {
 
   function personalSettingsButtons() {
     if (!settingsContentRoot()) return [];
+    const labels = [
+      "General",
+      "Profile",
+      "Appearance",
+      "Configuration",
+      "Personalization",
+      "Pets",
+      "Keyboard shortcuts",
+      "Usage & billing",
+      "Appshots",
+      "MCP servers",
+      "Browser",
+      "Computer use",
+      "Hooks",
+      "Connections",
+      "Git",
+      "Environments",
+      "Worktrees",
+      "Archived chats",
+      "Chat Settings",
+    ];
     return Array.from(document.querySelectorAll("button"))
       .filter((button) => {
         const text = textOf(button);
-        return [
-          "General",
-          "Profile",
-          "Appearance",
-          "Configuration",
-          "Personalization",
-          "Pets",
-          "Keyboard shortcuts",
-          "Usage & billing",
-        ].includes(text);
+        return labels.includes(text);
       });
   }
 
@@ -120,6 +137,26 @@ function activate(context) {
         return ["Import", "View"].includes(textOf(button));
       });
     if (nativeButton?.className) state.actionButtonClass = nativeButton.className;
+  }
+
+  function settingsSearchInputClass() {
+    const input = document.querySelector("input[placeholder^='Search settings'], input[aria-label*='Search settings']");
+    return input?.className || "h-8 w-full rounded border border-token-border bg-token-main-surface-primary px-2 text-sm text-token-text-primary placeholder:text-token-text-tertiary outline-none focus-visible:ring-2 focus-visible:ring-token-focus-border";
+  }
+
+  function createSearchField(onChange) {
+    const input = document.createElement("input");
+    input.type = "search";
+    input.placeholder = "Search extensions";
+    input.setAttribute("aria-label", "Search extensions");
+    input.className = settingsSearchInputClass();
+    input.value = state.searchQuery;
+    input.addEventListener("input", () => {
+      state.searchQuery = input.value;
+      onChange();
+    });
+    input.className = `${input.className} mb-3`;
+    return input;
   }
 
   function setSwitchState(toggle, enabled) {
@@ -288,6 +325,16 @@ function activate(context) {
     return row;
   }
 
+  function extensionMatchesSearch(extension) {
+    const query = normalizeSearch(state.searchQuery);
+    if (!query) return true;
+    return [
+      extension.id,
+      extension.name,
+      extension.description,
+    ].some((value) => normalizeSearch(value).includes(query));
+  }
+
   async function renderExtensionsPage() {
     if (!state.extensionsView) return;
     const root = settingsContentRoot();
@@ -320,27 +367,34 @@ function activate(context) {
       loadExtensions();
     }
     const rows = state.rows ?? [];
+    const renderRows = () => {
+      group.textContent = "";
+      const filteredRows = rows.filter(extensionMatchesSearch);
+      for (const extension of filteredRows) {
+        group.append(createExtensionRow(extension));
+      }
+      if (state.loading) {
+        const loading = document.createElement("div");
+        loading.className = "py-3 text-sm text-token-text-secondary";
+        loading.textContent = "Loading";
+        group.append(loading);
+      } else if (filteredRows.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "py-3 text-sm text-token-text-secondary";
+        const query = state.searchQuery.trim();
+        empty.textContent = query ? `No extensions found for "${query}"` : "No extensions found";
+        group.append(empty);
+      }
+    };
+    const search = createSearchField(renderRows);
     if (state.error) {
       const error = document.createElement("div");
       error.className = "mb-3 text-sm text-token-text-secondary";
       error.textContent = state.error;
       content.append(error);
     }
-    for (const extension of rows) {
-      group.append(createExtensionRow(extension));
-    }
-    if (state.loading) {
-      const loading = document.createElement("div");
-      loading.className = "py-3 text-sm text-token-text-secondary";
-      loading.textContent = "Loading";
-      group.append(loading);
-    } else if (rows.length === 0) {
-      const empty = document.createElement("div");
-      empty.className = "py-3 text-sm text-token-text-secondary";
-      empty.textContent = "No extensions found";
-      group.append(empty);
-    }
-    content.append(header, wrapper);
+    renderRows();
+    content.append(header, search, wrapper);
     scroller.append(content);
     root.append(scroller);
   }
@@ -373,6 +427,10 @@ function activate(context) {
         item.removeAttribute("aria-current");
         item.classList.remove("bg-token-list-hover-background");
       }
+      for (const item of document.querySelectorAll("[data-codex-extensions-sidebar='true']")) {
+        item.removeAttribute("aria-current");
+        item.classList.remove("bg-token-list-hover-background");
+      }
       button.setAttribute("aria-current", "page");
       button.classList.add("bg-token-list-hover-background");
       renderExtensionsPage();
@@ -383,8 +441,23 @@ function activate(context) {
       item.dataset.codexExtensionsNativeBound = "true";
       item.addEventListener("click", () => {
         state.extensionsView = false;
+        const extensionButton = document.querySelector("[data-codex-extensions-sidebar='true']");
+        extensionButton?.removeAttribute("aria-current");
+        extensionButton?.classList.remove("bg-token-list-hover-background");
       }, true);
     }
+  }
+
+  function syncExtensionsSidebarSelection() {
+    const extensionButton = document.querySelector("[data-codex-extensions-sidebar='true']");
+    if (!extensionButton) return;
+    if (state.extensionsView) {
+      extensionButton.setAttribute("aria-current", "page");
+      extensionButton.classList.add("bg-token-list-hover-background");
+      return;
+    }
+    extensionButton.removeAttribute("aria-current");
+    extensionButton.classList.remove("bg-token-list-hover-background");
   }
 
   function tick() {
@@ -393,6 +466,7 @@ function activate(context) {
     }
     captureSettingsActionButtonClass();
     renderExtensionsSidebarItem();
+    syncExtensionsSidebarSelection();
   }
 
   const observer = new MutationObserver(tick);
