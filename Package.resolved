@@ -1,6 +1,15 @@
 {
-  "originHash" : "cfcbd58c72c7531549d6f2428684abfabb5668710c9217c9a1f351883e7e7d78",
+  "originHash" : "7893b26bf44b83ca174e6aabbb5eee7a8fe741a7c4dd533929525beed40222c7",
   "pins" : [
+    {
+      "identity" : "permiso",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/zats/permiso",
+      "state" : {
+        "branch" : "main",
+        "revision" : "77afe0eb5251d6da8756aac1b24e3c01c1433f87"
+      }
+    },
     {
       "identity" : "sparkle",
       "kind" : "remoteSourceControl",
@@ -8,6 +17,15 @@
       "state" : {
         "revision" : "d46d456107feacc80711b21847b82b07bd9fb46e",
         "version" : "2.9.3"
+      }
+    },
+    {
+      "identity" : "xxhash.swift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tesseract-one/xxHash.swift",
+      "state" : {
+        "revision" : "6da8ccfacc312498a0c03515fdf820b7aeae49d5",
+        "version" : "0.1.0"
       }
     }
   ],

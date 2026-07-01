@@ -14,7 +14,8 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.3"),
-        .package(path: "Vendor/Permiso"),
+        .package(url: "https://github.com/tesseract-one/xxHash.swift", from: "0.1.0"),
+        .package(url: "https://github.com/zats/permiso", branch: "main"),
     ],
     targets: [
         .executableTarget(
@@ -29,6 +30,9 @@ let package = Package(
             ]),
         .target(
             name: "CodexSetup",
+            dependencies: [
+                .product(name: "xxHash", package: "xxHash.swift"),
+            ],
             resources: [
                 .copy("Resources/BundledExtensions"),
             ],
