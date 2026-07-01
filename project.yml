@@ -56,10 +56,12 @@ targets:
         CFBundleIdentifier: $(PRODUCT_BUNDLE_IDENTIFIER)
         CFBundleName: BibliothecaSetup
         CFBundlePackageType: FMWK
-        CFBundleShortVersionString: 0.1.0
-        CFBundleVersion: "1"
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: com.zats.Bibliotheca.BibliothecaSetup
+      MARKETING_VERSION: 0.1.0
+      CURRENT_PROJECT_VERSION: "1"
       SWIFT_STRICT_CONCURRENCY: complete
       SWIFT_UPCOMING_FEATURE_STRICT_CONCURRENCY: YES
   Bibliotheca:
@@ -85,16 +87,19 @@ targets:
         CFBundleName: Bibliotheca
         CFBundleDisplayName: Bibliotheca
         CFBundlePackageType: APPL
-        CFBundleShortVersionString: 0.1.0
-        CFBundleVersion: "1"
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSMinimumSystemVersion: "26.2"
         LSUIElement: true
-        SUFeedURL: https://raw.githubusercontent.com/zats/bibliotheca/main/appcast.xml
+        SUFeedURL: $(FEED_URL)
         SUPublicEDKey: Ow8SUVrNumywzYRwXp2zHI6r4cQ+QPqp2JQX+6X5AdA=
         SUEnableAutomaticChecks: true
         SUAutomaticallyUpdate: false
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: com.zats.Bibliotheca
       PRODUCT_NAME: Bibliotheca
+      MARKETING_VERSION: 0.1.0
+      CURRENT_PROJECT_VERSION: "1"
+      FEED_URL: https://raw.githubusercontent.com/zats/bibliotheca/main/appcast.xml
       SWIFT_STRICT_CONCURRENCY: complete
       SWIFT_UPCOMING_FEATURE_STRICT_CONCURRENCY: YES
