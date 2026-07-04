@@ -1,22 +1,23 @@
 # Codex Version Watch Cloudflare Worker
 
-GitHub scheduled workflows can be delayed or skipped. This Worker is an external cron source that checks the Codex Sparkle feed and opens a GitHub issue when a new Codex version appears.
+GitHub scheduled workflows can be delayed or skipped. This Worker is an external cron source that dispatches the GitHub version-watch workflow every 5 minutes.
 
 ## What It Does
 
-1. Reads the Sparkle feed.
-2. Reads `.github/codex-version-watch-state.json` from `main`.
-3. Exits if the latest version is already recorded.
-4. Opens a `codex-version-watch` issue with the version and download URL.
-5. Updates `.github/codex-version-watch-state.json` so the same version is not processed again.
+1. Dispatches `.github/workflows/codex-version-watch.yml`.
+2. GitHub reads the Sparkle feed.
+3. GitHub opens a `codex-version-watch` issue when a new Codex version appears.
+4. The issue triggers `.github/workflows/codex-smoke-orchestrator.yml`.
+5. The orchestrator runs the patch smoke workflow when the issue matches its conditions.
 
-The issue triggers `.github/workflows/codex-smoke-orchestrator.yml`, and that workflow decides whether to run the patch smoke workflow.
+This keeps Cloudflare as a timer only. GitHub owns version detection, state, issue creation, and patching.
 
 ## Setup
 
 Create a fine-grained GitHub token for `zats/bibliotheca` with:
 
 - Contents: read/write
+- Actions: read/write
 - Issues: read/write
 
 Then configure Cloudflare:
@@ -36,10 +37,10 @@ After deploy:
 curl https://codex-version-watch.<your-subdomain>.workers.dev/check
 ```
 
-Expected result when no new version exists:
+Expected result:
 
 ```json
-{"dispatched":false}
+{"dispatched":true,"workflow":"codex-version-watch.yml"}
 ```
 
 ## Configuration
@@ -51,7 +52,6 @@ Important variables:
 - `GITHUB_OWNER`: GitHub owner.
 - `GITHUB_REPO`: GitHub repo.
 - `GITHUB_BRANCH`: branch containing workflows and state.
-- `GITHUB_STATE_PATH`: path to the recorded latest version.
-- `SPARKLE_FEED_URL`: Codex Sparkle feed.
+- `GITHUB_WORKFLOW_ID`: version-watch workflow file to dispatch.
 
 The cron schedule is also in `wrangler.toml`.

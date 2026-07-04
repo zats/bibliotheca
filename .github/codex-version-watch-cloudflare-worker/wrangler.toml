@@ -6,8 +6,7 @@ compatibility_date = "2026-07-04"
 GITHUB_OWNER = "zats"
 GITHUB_REPO = "bibliotheca"
 GITHUB_BRANCH = "main"
-GITHUB_STATE_PATH = ".github/codex-version-watch-state.json"
-SPARKLE_FEED_URL = "https://persistent.oaistatic.com/codex-app-prod/appcast.xml"
+GITHUB_WORKFLOW_ID = "codex-version-watch.yml"
 
 [triggers]
 crons = ["*/5 * * * *"]
