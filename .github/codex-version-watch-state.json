@@ -1,0 +1,11 @@
+{
+  "latestVersion": "26.623.101652",
+  "publishedRaw": "Fri, 03 Jul 2026 01:26:22 +0000",
+  "publishedAt": "2026-07-03T01:26:22Z",
+  "detectedAt": "2026-07-04T16:02:10Z",
+  "detectionLagSeconds": 138948,
+  "issueNumber": 2,
+  "issueOpenedAt": "2026-07-04T16:02:12Z",
+  "feedUrl": "https://persistent.oaistatic.com/codex-app-prod/appcast.xml",
+  "downloadUrl": "https://persistent.oaistatic.com/codex-app-prod/Codex-darwin-arm64-26.623.101652.zip"
+}
