@@ -589,6 +589,7 @@
     );
     installThreadChromeRenderer();
     await Promise.all(activeExtensionIds.map(loadScript));
+    await namespace.host.writeReadyProbe?.();
   }
 
   const ready = start().catch(console.error);

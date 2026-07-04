@@ -1,8 +1,9 @@
 (function () {
   const { ipcMain } = require("electron");
   const fs = require("fs");
+  const os = require("os");
   const path = require("path");
-  const { extensionsRoot } = require("./extension-paths.js");
+  const { codexHome, extensionsRoot } = require("./extension-paths.js");
   const EXTENSION_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
   function registryPath() {
@@ -21,6 +22,55 @@
 
   function sourcePath(extensionId) {
     return path.join(extensionsRoot(), extensionId, "src", "main.js");
+  }
+
+  function packageJsonPath() {
+    const resourcesPath = process.env.CODEX_ELECTRON_RESOURCES_PATH?.trim() || process.resourcesPath;
+    return path.join(resourcesPath, "app", "package.json");
+  }
+
+  async function packageMetadata() {
+    try {
+      const packageJson = JSON.parse(await fs.promises.readFile(packageJsonPath(), "utf8"));
+      return {
+        codexVersion: packageJson.version ?? null,
+        patchPackVersion: packageJson.bibliothecaPatchPackVersion ?? null,
+        extensionApiVersion: packageJson.bibliothecaExtensionApiVersion ?? null,
+      };
+    } catch {
+      return {
+        codexVersion: null,
+        patchPackVersion: null,
+        extensionApiVersion: null,
+      };
+    }
+  }
+
+  function codexAppPath() {
+    return path.resolve(path.dirname(process.execPath), "..", "..");
+  }
+
+  function probePath() {
+    return path.join(codexHome(), "extensions", `.${process.pid}.json`);
+  }
+
+  async function writeReadyProbe() {
+    if (process.env.BIBLIOTHECA_WAIT_FOR_READY !== "1") {
+      return false;
+    }
+    const metadata = await packageMetadata();
+    await fs.promises.mkdir(path.dirname(probePath()), { recursive: true });
+    await fs.promises.writeFile(
+      probePath(),
+      `${JSON.stringify({
+        timestamp: new Date().toISOString(),
+        codexAppPath: codexAppPath(),
+        platform: os.platform(),
+        ...metadata,
+      })}\n`,
+      "utf8",
+    );
+    return true;
   }
 
   async function readJson(filePath, fallback) {
@@ -64,5 +114,9 @@
     assertExtensionId(extensionId);
     await writeJson(settingsPath(extensionId), settings);
     return true;
+  });
+  ipcMain.handle("codex_extensions:write-ready-probe", writeReadyProbe);
+  void writeReadyProbe().catch((error) => {
+    console.error("Failed to write Bibliotheca readiness probe", error);
   });
 })();

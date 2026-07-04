@@ -5,9 +5,12 @@ const { extensionsRoot } = require("./extension-paths.js");
 
 const root = path.resolve(__dirname, "../..");
 const appsRoot = path.join(root, "apps");
-const original = discoverOriginalApp();
+const explicitAppPath = process.env.BIBLIOTHECA_PATCH_APP_PATH?.trim()
+  ? path.resolve(process.env.BIBLIOTHECA_PATCH_APP_PATH.trim())
+  : null;
+const original = explicitAppPath ?? discoverOriginalApp();
 const version = readBundleVersion(original);
-const modified = path.join(appsRoot, `Codex-${version}.modified.app`);
+const modified = explicitAppPath ?? path.join(appsRoot, `Codex-${version}.modified.app`);
 const webview = path.join(modified, "Contents/Resources/app/webview");
 const vite = path.join(modified, "Contents/Resources/app/.vite/build");
 const preloadFile = path.join(vite, "preload.js");
@@ -87,8 +90,11 @@ function menuFile() {
 }
 
 function resetModifiedApp() {
+  if (explicitAppPath) {
+    return;
+  }
   if (fs.existsSync(modified)) {
-    run("trash", [modified]);
+    fs.rmSync(modified, { recursive: true, force: true });
   }
   run("ditto", [original, modified]);
 }
@@ -100,7 +106,7 @@ function unpackAppAsar() {
     return;
   }
   run("asar", ["extract", asarPath, appPath]);
-  run("trash", [asarPath]);
+  fs.rmSync(asarPath, { force: true });
 }
 
 function restoreNativeExecutableBits() {
@@ -211,10 +217,18 @@ function patchPreloadBridge() {
   preload = replaceOnce(
     preload,
     "showApplicationMenu:async(t,n,i)=>{await e.ipcRenderer.invoke(r,{menuId:t,x:n,y:i})},",
-    "showApplicationMenu:async(t,n,i)=>{await e.ipcRenderer.invoke(r,{menuId:t,x:n,y:i})},extensions:{readExtensionRegistry:()=>e.ipcRenderer.invoke(`codex_extensions:read-extension-registry`),readExtensionScript:t=>e.ipcRenderer.invoke(`codex_extensions:read-extension-script`,t),readSettings:t=>e.ipcRenderer.invoke(`codex_extensions:read-settings`,t),writeSettings:(t,n)=>e.ipcRenderer.invoke(`codex_extensions:write-settings`,t,n)},",
+    "showApplicationMenu:async(t,n,i)=>{await e.ipcRenderer.invoke(r,{menuId:t,x:n,y:i})},extensions:{readExtensionRegistry:()=>e.ipcRenderer.invoke(`codex_extensions:read-extension-registry`),readExtensionScript:t=>e.ipcRenderer.invoke(`codex_extensions:read-extension-script`,t),readSettings:t=>e.ipcRenderer.invoke(`codex_extensions:read-settings`,t),writeSettings:(t,n)=>e.ipcRenderer.invoke(`codex_extensions:write-settings`,t,n),writeReadyProbe:()=>e.ipcRenderer.invoke(`codex_extensions:write-ready-probe`)},",
     "preload extension bridge",
   );
   write(preloadFile, preload);
+}
+
+function patchPackageJsonMetadata() {
+  const packageJsonPath = path.join(modified, "Contents/Resources/app/package.json");
+  const packageJson = JSON.parse(read(packageJsonPath));
+  packageJson.bibliothecaPatchPackVersion = "local";
+  packageJson.bibliothecaExtensionApiVersion = "1";
+  write(packageJsonPath, `${JSON.stringify(packageJson, null, 2)}\n`);
 }
 
 function patchMainIpc() {
@@ -321,6 +335,7 @@ restoreNativeExecutableBits();
 patchPackageMetadataLookup();
 patchSparkleNativeAddonPath();
 patchElectronLauncher();
+patchPackageJsonMetadata();
 patchWebviewLoader();
 patchPreloadBridge();
 patchMainIpc();
