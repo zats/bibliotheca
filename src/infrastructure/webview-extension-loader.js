@@ -34,11 +34,7 @@
     for (const listener of threadContextListeners) {
       listener(currentThreadContext);
     }
-    window.dispatchEvent(
-      new CustomEvent("codex-extension-thread-context-changed", {
-        detail: { context: currentThreadContext },
-      }),
-    );
+    window.dispatchEvent(new CustomEvent("codex-extension-thread-context-changed"));
     notifyThreadChromeChanged();
   }
 
@@ -75,7 +71,7 @@
     getItems(context) {
       return Array.from(threadMenuProviders.entries()).flatMap(([extensionId, provider]) => {
         try {
-          return normalizeMenuItems(provider(context)).map((item) => ({ ...item, extensionId }));
+          return normalizeMenuItems(provider(context));
         } catch (error) {
           console.error(`Thread menu provider failed: ${extensionId}`, error);
           return [];
@@ -93,7 +89,7 @@
       return currentThreadContext;
     },
     setCurrent(context) {
-      currentThreadContext = context;
+      currentThreadContext = normalizeThreadContext(context);
       notifyThreadContextChanged();
     },
     subscribe(listener) {
@@ -122,7 +118,7 @@
         try {
           const theme = normalizeThreadChromeTheme(provider(context));
           if (theme) {
-            return { ...theme, extensionId };
+            return theme;
           }
         } catch (error) {
           console.error(`Thread chrome provider failed: ${extensionId}`, error);
@@ -165,6 +161,16 @@
       borderColor:
         normalizeHex(value.borderColor) ??
         mixHex(background, stateBase, stateBase === "#ffffff" ? 0.22 : 0.18),
+    };
+  }
+
+  function normalizeThreadContext(value) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return null;
+    }
+    return {
+      conversationId: typeof value.conversationId === "string" ? value.conversationId : null,
+      title: typeof value.title === "string" ? value.title : null,
     };
   }
 
@@ -559,13 +565,12 @@
     const objectUrl = URL.createObjectURL(blob);
     const script = document.createElement("script");
     script.defer = true;
-    script.dataset.codexExtensionId = extensionId;
     script.src = objectUrl;
     script.addEventListener(
       "load",
       () => {
         URL.revokeObjectURL(objectUrl);
-        window.dispatchEvent(new CustomEvent("codex-extension-loaded", { detail: { extensionId } }));
+        window.dispatchEvent(new CustomEvent("codex-extension-loaded"));
       },
       { once: true },
     );
