@@ -197,7 +197,7 @@ function patchElectronLauncher() {
 
 function patchWebviewLoader() {
   fs.copyFileSync(
-    path.join(root, "src/infrastructure/webview-extension-loader.js"),
+    path.join(root, "extensions/infrastructure/webview-extension-loader.js"),
     path.join(webview, "codex-extension-loader.js"),
   );
 
@@ -233,10 +233,10 @@ function patchPackageJsonMetadata() {
 
 function patchMainIpc() {
   fs.copyFileSync(
-    path.join(root, "src/infrastructure/extension-paths.js"),
+    path.join(root, "extensions/infrastructure/extension-paths.js"),
     path.join(vite, "extension-paths.js"),
   );
-  write(mainFile(), `${read(mainFile())}\n${read(path.join(root, "src/infrastructure/main-extension-ipc.js"))}`);
+  write(mainFile(), `${read(mainFile())}\n${read(path.join(root, "extensions/infrastructure/main-extension-ipc.js"))}`);
 }
 
 function patchThreadOverflowMenu() {
@@ -311,7 +311,7 @@ function installRuntimeExtensions() {
   const extensionRoot = path.join(extensionsRoot(), extensionId);
   fs.mkdirSync(path.join(extensionRoot, "src"), { recursive: true });
   fs.copyFileSync(
-    path.join(root, "src/extensions/thread-colors/src/main.js"),
+    path.join(root, "extensions/extensions/thread-colors/src/main.js"),
     path.join(extensionRoot, "src/main.js"),
   );
 

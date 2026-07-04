@@ -48,7 +48,7 @@ Success output:
 }
 ```
 
-The first implementation uses the repository patcher at `src/infrastructure/patch-modified-app.js`.
+The first implementation uses the repository patcher at `extensions/infrastructure/patch-modified-app.js`.
 
 ### is-patched
 

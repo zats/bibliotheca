@@ -136,7 +136,7 @@ Target:
 Copy:
 
 ```
-src/infrastructure/webview-extension-loader.js
+extensions/infrastructure/webview-extension-loader.js
 -> $APP/Contents/Resources/app/webview/codex-extension-loader.js
 ```
 
@@ -189,11 +189,11 @@ Target:
 Copy:
 
 ```
-src/infrastructure/extension-paths.js
+extensions/infrastructure/extension-paths.js
 -> $APP/Contents/Resources/app/.vite/build/extension-paths.js
 ```
 
-Append `src/infrastructure/main-extension-ipc.js`.
+Append `extensions/infrastructure/main-extension-ipc.js`.
 
 This registers:
 

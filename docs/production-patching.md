@@ -105,7 +105,7 @@ Patch packs are versioned units of patching logic and metadata. A patch pack sho
   "supportedCodexVersions": [">=26.623.42026 <=26.623.101652"],
   "verifiedCodexVersions": ["26.623.101652"],
   "extensionApiVersion": "1",
-  "patcherEntry": "src/infrastructure/patch-modified-app.js",
+  "patcherEntry": "extensions/infrastructure/patch-modified-app.js",
   "verification": ["codesign", "node-check", "runtime-ping"]
 }
 ```

@@ -23,7 +23,7 @@ Codex home is `$CODEX_HOME` when set, otherwise `$HOME/.codex`.
 
 - Clean source app: `apps/Codex-<version>.original.app`
 - Prepared local app: `apps/Codex-<version>.modified.app`
-- Repository extension source: `src/extensions/<extension-id>/src/main.js`
+- Repository extension source: `extensions/extensions/<extension-id>/src/main.js`
 - Runtime extension source: `$CODEX_HOME/extensions/<extension-id>/src/main.js`
 - Runtime extension settings: `$CODEX_HOME/extensions/<extension-id>/settings.json`
 - Runtime extension registry: `$CODEX_HOME/extensions/settings.json`
@@ -31,19 +31,19 @@ Codex home is `$CODEX_HOME` when set, otherwise `$HOME/.codex`.
 ## Extension Ids
 
 Use lowercase dash-separated ids, for example `thread-colors`.
-The id must match the folder name, for example `src/extensions/thread-colors/`.
+The id must match the folder name, for example `extensions/extensions/thread-colors/`.
 The runtime entry point is always `$CODEX_HOME/extensions/<extension-id>/src/main.js`.
 
 ## Development Loop
 
-1. Edit repository source: `src/extensions/<extension-id>/src/main.js`.
+1. Edit repository source: `extensions/extensions/<extension-id>/src/main.js`.
 
 2. Sync it to runtime:
 
 ```sh
 CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
-mkdir -p "$CODEX_HOME/extensions/<extension-id>/src"
-cp src/extensions/<extension-id>/src/main.js "$CODEX_HOME/extensions/<extension-id>/src/main.js"
+mkdir -p "$CODEX_HOME/extensions/<extension-id>/extensions"
+cp extensions/extensions/<extension-id>/src/main.js "$CODEX_HOME/extensions/<extension-id>/src/main.js"
 ```
 
 3. Enable the extension in `$CODEX_HOME/extensions/settings.json`:
@@ -65,7 +65,7 @@ For extension-only changes, first try reloading the webview or restarting the ap
 
 For UI work, use screenshots and DOM/console inspection when possible.
 
-6. Copy any successful runtime-only experiment back to `src/extensions/<extension-id>/src/main.js`.
+6. Copy any successful runtime-only experiment back to `extensions/extensions/<extension-id>/src/main.js`.
 
 No extension behavior should live only under `$CODEX_HOME/extensions`.
 
@@ -82,7 +82,7 @@ ditto apps/Codex-<version>.original.app apps/Codex-<version>.modified.app
 
 2. Apply the documented prep flow in `docs/prepare-codex.md`.
 
-3. Apply infrastructure from `src/infrastructure`.
+3. Apply infrastructure from `extensions/infrastructure`.
 
 4. Sync runtime extensions.
 

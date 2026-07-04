@@ -18,7 +18,8 @@ let package = Package(
             name: "Bibliotheca",
             dependencies: [
                 .product(name: "ArgumentParser", package: "swift-argument-parser")
-            ]
+            ],
+            path: "Sources"
         )
     ]
 )

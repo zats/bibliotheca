@@ -196,16 +196,19 @@ jobs:
         run: |
           set -euo pipefail
           {
-            swift build --configuration release
-            .build/release/bibliotheca --help
-            .build/release/bibliotheca patch --help
-            .build/release/bibliotheca launch --help
+            swift build --package-path cli --configuration release
+            BIN_DIR="$(swift build --package-path cli --configuration release --show-bin-path)"
+            BIBLIOTHECA_BIN="$BIN_DIR/bibliotheca"
+            echo "BIBLIOTHECA_BIN=$BIBLIOTHECA_BIN" >> "$GITHUB_ENV"
+            "$BIBLIOTHECA_BIN" --help
+            "$BIBLIOTHECA_BIN" patch --help
+            "$BIBLIOTHECA_BIN" launch --help
           } 2>&1 | tee "$LOG_DIR/build-cli.log"
 
       - name: Check clean patch state
         run: |
           set +e
-          .build/release/bibliotheca is-patched --codex-app-path "$CODEX_APP_PATH" > "$LOG_DIR/is-patched-before.json" 2> "$LOG_DIR/is-patched-before.stderr"
+          "$BIBLIOTHECA_BIN" is-patched --codex-app-path "$CODEX_APP_PATH" > "$LOG_DIR/is-patched-before.json" 2> "$LOG_DIR/is-patched-before.stderr"
           STATUS=$?
           set -e
           cat "$LOG_DIR/is-patched-before.json"
@@ -215,7 +218,7 @@ jobs:
       - name: Patch app
         run: |
           set +e
-          .build/release/bibliotheca patch --codex-app-path "$CODEX_APP_PATH" > "$LOG_DIR/patch.json" 2> "$LOG_DIR/patch.stderr"
+          "$BIBLIOTHECA_BIN" patch --codex-app-path "$CODEX_APP_PATH" > "$LOG_DIR/patch.json" 2> "$LOG_DIR/patch.stderr"
           STATUS=$?
           set -e
           cat "$LOG_DIR/patch.json"
@@ -239,7 +242,7 @@ jobs:
       - name: Check patched state
         run: |
           set +e
-          .build/release/bibliotheca is-patched --codex-app-path "$CODEX_APP_PATH" > "$LOG_DIR/is-patched-after.json" 2> "$LOG_DIR/is-patched-after.stderr"
+          "$BIBLIOTHECA_BIN" is-patched --codex-app-path "$CODEX_APP_PATH" > "$LOG_DIR/is-patched-after.json" 2> "$LOG_DIR/is-patched-after.stderr"
           STATUS=$?
           set -e
           cat "$LOG_DIR/is-patched-after.json"
@@ -250,7 +253,7 @@ jobs:
       - name: Launch and wait for ready probe
         run: |
           set +e
-          .build/release/bibliotheca launch \
+          "$BIBLIOTHECA_BIN" launch \
             --codex-app-path "$CODEX_APP_PATH" \
             --wait-for-ready \
             --timeout "${READY_TIMEOUT_SECONDS}s" \

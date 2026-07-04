@@ -22,9 +22,9 @@ Patching is meant to be kept minimal:
 # Layout
 
 - `apps/Codex-<version>.original.app` - original Codex app, must never be modified unless user explicitly overrides this instruction referencing it directly
-- `apps/Codex-<version>.modified.app` - the app we are currently iterating over. Before any extension iteration, delete the existing modified app, duplicate `apps/Codex-<version>.original.app` into `apps/Codex-<version>.modified.app`, then apply app patches from `src/infrastructure` and documented patch points.
-- `src/infrastructure` where we store minimal generalizable entry points for all extensions allowing to minimize impact on the patches
-- `src/extensions/<extension-id>/src/main.js` is the repository source of truth for each extension. `<extension-id>` must match the extension folder name and be safe for paths. During iteration, sync each extension source into `$CODEX_HOME/extensions/<extension-id>/src/main.js`; do not bundle extension source into `.modified.app`.
+- `apps/Codex-<version>.modified.app` - the app we are currently iterating over. Before any extension iteration, delete the existing modified app, duplicate `apps/Codex-<version>.original.app` into `apps/Codex-<version>.modified.app`, then apply app patches from `extensions/infrastructure` and documented patch points.
+- `extensions/infrastructure` where we store minimal generalizable entry points for all extensions allowing to minimize impact on the patches
+- `extensions/extensions/<extension-id>/src/main.js` is the repository source of truth for each extension. `<extension-id>` must match the extension folder name and be safe for paths. During iteration, sync each extension source into `$CODEX_HOME/extensions/<extension-id>/src/main.js`; do not bundle extension source into `.modified.app`.
 - `docs/apis.md` always up to date public extension API documentation
 - `docs/architecture.md` always up to date extension architecture and design principles
 - `docs/prepare-codex.md` always up to date instructions for turning a clean Codex app into an unpacked, signed app that loads extensions, including target files, exact anchors/search strings, inserted behavior, copied infrastructure files, and update notes
@@ -58,11 +58,11 @@ We must approach creating extensions as two separate tasks:
 2. Document where when and what is being extended so that
     - We have single centralized extension documentation and any following extension can easily find existing extension APIs
     - We can easily replicate extensions entry points on the new version of Codex and load actual extension relatively easily
-    - Infrastructure (i.e. extension entry points source code) must stay under `src/infrastructure` and only then be integrated into the ...modified.app
+    - Infrastructure (i.e. extension entry points source code) must stay under `extensions/infrastructure` and only then be integrated into the ...modified.app
     - Any app source patch, anchor change, injected helper, copied infrastructure entry point, or patched target file must be documented in `docs/prepare-codex.md` in the same change with exact anchors/search strings
     - Any extension API change must be documented in `docs/apis.md` in the same change
     - Keep API payloads demand-driven; leave Codex internals private until extension source needs a specific field.
-    - Specific extension code must stay outside of the app. Repository source lives at `src/extensions/<extension-id>/src/main.js`; runtime source lives at `$CODEX_HOME/extensions/<extension-id>/src/main.js`. During development, keep both synced.
+    - Specific extension code must stay outside of the app. Repository source lives at `extensions/extensions/<extension-id>/src/main.js`; runtime source lives at `$CODEX_HOME/extensions/<extension-id>/src/main.js`. During development, keep both synced.
     - No changes should exist only in the .modified.app since it might get updated and we will lose all progress
 3. All extensions must pick a unique dash-separated identifier name
 4. All extension data should be stored under `$CODEX_HOME/extensions/<extension-id>/` - no data belonging to the extension is allowed to live outside of this folder

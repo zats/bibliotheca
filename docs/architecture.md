@@ -21,7 +21,7 @@ The app should only provide extension entry points:
 Extension-specific behavior belongs in:
 
 ```
-src/extensions/<extension-id>/src/main.js
+extensions/extensions/<extension-id>/src/main.js
 $CODEX_HOME/extensions/<extension-id>/src/main.js
 ```
 
@@ -42,7 +42,7 @@ Extension ids must be dash-separated path-safe names.
 
 Repository source:
 
-`src/extensions/<extension-id>/src/main.js`
+`extensions/extensions/<extension-id>/src/main.js`
 
 Runtime source:
 

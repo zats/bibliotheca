@@ -23,7 +23,7 @@ struct Patch: ParsableCommand {
     @OptionGroup var options: CodexAppOptions
 
     @Option(help: .hidden)
-    var patcherPath: String = "src/infrastructure/patch-modified-app.js"
+    var patcherPath: String = "extensions/infrastructure/patch-modified-app.js"
 
     func run() throws {
         let app = try options.app
