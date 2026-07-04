@@ -57,6 +57,7 @@ cp src/extensions/<extension-id>/src/main.js "$CODEX_HOME/extensions/<extension-
 4. Reload Codex app UI.
 
 For bootloader or app-patch changes, restart the app.
+Do not launch a second Codex app while another is already running; macOS will route to the existing instance. User might want to quit current one (where you are potentially running) and (re)launch modified one manually.
 
 For extension-only changes, first try reloading the webview or restarting the app. The current bootloader loads extension source at page startup.
 
