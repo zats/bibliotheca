@@ -16,15 +16,11 @@ Extensions must put their globals under `window.extensions.<extensionName>`.
 
 The bootloader loads enabled extension entry points from:
 
-```text
-~/.codex/extensions/<extension-id>/src/main.js
-```
+`~/.codex/extensions/<extension-id>/src/main.js`
 
 Enabled extensions are read from:
 
-```text
-~/.codex/extensions/settings.json
-```
+`~/.codex/extensions/settings.json`
 
 Registry shape:
 
@@ -62,7 +58,7 @@ window.extensions.host.writeSettings(extensionId, settings)
 
 Storage locations:
 
-```text
+```
 ~/.codex/extensions/settings.json
 ~/.codex/extensions/<extension-id>/settings.json
 ```

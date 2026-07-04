@@ -39,6 +39,14 @@ function resetModifiedApp() {
   run("ditto", [original, modified]);
 }
 
+function restoreNativeExecutableBits() {
+  const nativeRelease = path.join(
+    modified,
+    "Contents/Resources/app/node_modules/node-pty/build/Release",
+  );
+  run("chmod", ["+x", path.join(nativeRelease, "pty.node"), path.join(nativeRelease, "spawn-helper")]);
+}
+
 function patchWebviewLoader() {
   fs.copyFileSync(
     path.join(root, "src/infrastructure/webview-extension-loader.js"),
@@ -126,6 +134,7 @@ function installRuntimeExtensions() {
 }
 
 resetModifiedApp();
+restoreNativeExecutableBits();
 patchWebviewLoader();
 patchPreloadBridge();
 patchMainIpc();
