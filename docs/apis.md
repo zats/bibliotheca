@@ -2,6 +2,8 @@
 
 Codex extensions run in the webview and use APIs under `window.extensions`.
 
+Documented payloads are the supported API surface. Keep them limited to fields current extension source reads.
+
 Extension ids must be lowercase dash-separated identifiers:
 
 ```js
@@ -12,15 +14,17 @@ Extensions must put their globals under `window.extensions.<extensionName>`.
 
 ## Runtime
 
+Codex home is `$CODEX_HOME` when set, otherwise `$HOME/.codex`.
+
 ### Bootloader
 
 The bootloader loads enabled extension entry points from:
 
-`~/.codex/extensions/<extension-id>/src/main.js`
+`$CODEX_HOME/extensions/<extension-id>/src/main.js`
 
 Enabled extensions are read from:
 
-`~/.codex/extensions/settings.json`
+`$CODEX_HOME/extensions/settings.json`
 
 Registry shape:
 
@@ -40,9 +44,7 @@ window.extensions.bootloader.getActiveExtensionIds()
 Events:
 
 ```js
-window.addEventListener("codex-extension-loaded", (event) => {
-  event.detail.extensionId
-})
+window.addEventListener("codex-extension-loaded", () => {})
 ```
 
 ### Host Storage
@@ -59,8 +61,8 @@ window.extensions.host.writeSettings(extensionId, settings)
 Storage locations:
 
 ```
-~/.codex/extensions/settings.json
-~/.codex/extensions/<extension-id>/settings.json
+$CODEX_HOME/extensions/settings.json
+$CODEX_HOME/extensions/<extension-id>/settings.json
 ```
 
 `writeSettings()` creates the extension directory and atomically replaces `settings.json`.
@@ -68,6 +70,8 @@ Storage locations:
 ## Thread
 
 ### Context
+
+Context contains the fields current extensions consume.
 
 The current thread context is available through:
 
@@ -81,29 +85,14 @@ Context shape:
 ```js
 {
   conversationId,
-  cwd,
-  title,
-  canPin,
-  isPinned,
-  isWorktreeThread,
-  hasSideChatTab,
-  canOpenSideChat,
-  canFork,
-  canForkIntoWorktree,
-  canAddScheduledTask,
-  canOpenInNewWindow,
-  isTurnInProgress,
-  archiveNavigation,
-  archiveSource
+  title
 }
 ```
 
 Events:
 
 ```js
-window.addEventListener("codex-extension-thread-context-changed", (event) => {
-  event.detail.context
-})
+window.addEventListener("codex-extension-thread-context-changed", () => {})
 ```
 
 ### Menus

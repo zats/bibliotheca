@@ -22,10 +22,11 @@ Extension-specific behavior belongs in:
 
 ```
 src/extensions/<extension-id>/src/main.js
-~/.codex/extensions/<extension-id>/src/main.js
+$CODEX_HOME/extensions/<extension-id>/src/main.js
 ```
 
 The clean app preparation flow is documented in `docs/prepare-codex.md`.
+The local extension development loop is documented in `docs/local-extension-development.md`.
 
 ## Bootloader
 
@@ -35,6 +36,8 @@ It must create the shared extension namespace if needed. Extension globals live 
 
 ## Extension Source
 
+Runtime paths are rooted at Codex home: `$CODEX_HOME` when set, otherwise `$HOME/.codex`.
+
 Extension ids must be dash-separated path-safe names.
 
 Repository source:
@@ -43,7 +46,7 @@ Repository source:
 
 Runtime source:
 
-`~/.codex/extensions/<extension-id>/src/main.js`
+`$CODEX_HOME/extensions/<extension-id>/src/main.js`
 
 During development, keep both synced. The app bundle must not contain extension source.
 
@@ -51,23 +54,26 @@ During development, keep both synced. The app bundle must not contain extension 
 
 Extension data must stay under:
 
-`~/.codex/extensions/<extension-id>/`
+`$CODEX_HOME/extensions/<extension-id>/`
 
 Settings live at:
 
-`~/.codex/extensions/<extension-id>/settings.json`
+`$CODEX_HOME/extensions/<extension-id>/settings.json`
 
 Uninstalling an extension must remove its extension folder.
 
 ## API Design
 
+API surfaces are demand-driven. Expose the smallest payload that current extension source needs, and keep unrelated Codex internals private.
+
 Before adding app patches:
 
 1. Check whether an existing extension API can support the need.
-2. Generalize the existing API if that keeps the surface coherent.
-3. Add a new API only when the behavior is genuinely new.
-4. Update `docs/apis.md`.
-5. Update existing extensions to match the API.
+2. Prove the required fields by reading the extension code that will consume them.
+3. Generalize the existing API only as far as current extensions require.
+4. Add a new API only when the behavior is genuinely new and used now.
+5. Update `docs/apis.md`.
+6. Update existing extensions to match the API.
 
 ## UI Design
 

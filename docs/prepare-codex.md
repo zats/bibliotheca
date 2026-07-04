@@ -127,6 +127,13 @@ Target:
 
 `$APP/Contents/Resources/app/.vite/build/main-*.js`
 
+Copy:
+
+```
+src/infrastructure/extension-paths.js
+-> $APP/Contents/Resources/app/.vite/build/extension-paths.js
+```
+
 Append `src/infrastructure/main-extension-ipc.js`.
 
 ## Patch Thread Overflow Menu
@@ -160,25 +167,12 @@ Use the current file's aliases:
 
 Insert `CXThreadContext` at the start of the returned fragment so extensions can read current thread context.
 
-Build context from the current component variables:
+Build only the context fields documented in `docs/apis.md`:
 
 ```js
 {
   conversationId,
-  cwd,
-  title,
-  canPin,
-  isPinned,
-  isWorktreeThread,
-  hasSideChatTab,
-  canOpenSideChat,
-  canFork,
-  canForkIntoWorktree,
-  canAddScheduledTask,
-  canOpenInNewWindow,
-  isTurnInProgress,
-  archiveNavigation,
-  archiveSource
+  title
 }
 ```
 
@@ -209,7 +203,11 @@ This is required after ad hoc signing.
 
 ## Runtime Extensions
 
-Sync extension source into `~/.codex/extensions/<extension-id>/src/main.js` and enable it in `~/.codex/extensions/settings.json`.
+Resolve Codex home like Codex itself: `$CODEX_HOME` when set, otherwise `$HOME/.codex`.
+
+Sync extension source into `$CODEX_HOME/extensions/<extension-id>/src/main.js` and enable it in `$CODEX_HOME/extensions/settings.json`.
+
+Use `docs/local-extension-development.md` for the day-to-day extension iteration loop.
 
 ## Sign And Verify
 
@@ -217,6 +215,7 @@ Sync extension source into `~/.codex/extensions/<extension-id>/src/main.js` and 
 codesign --force --deep --sign - "$APP"
 codesign --verify --deep --strict "$APP"
 node --check "$APP"/Contents/Resources/default_app/main.js
+node --check "$APP"/Contents/Resources/app/.vite/build/extension-paths.js
 node --check "$APP"/Contents/Resources/app/.vite/build/preload.js
 node --check "$APP"/Contents/Resources/app/.vite/build/main-*.js
 node --check "$APP"/Contents/Resources/app/webview/assets/thread-overflow-menu-*.js
@@ -234,6 +233,6 @@ Verify:
 
 - app does not show Electron default app
 - app does not start as `Codex (Dev)`
-- extensions load from `~/.codex/extensions`
+- extensions load from `$CODEX_HOME/extensions`
 - Terminal opens
 - Browser plugin can open the in-app browser
