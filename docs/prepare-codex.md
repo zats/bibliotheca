@@ -32,6 +32,47 @@ chmod +x \
 
 Terminal loads `node-pty` from unpacked `Contents/Resources/app/node_modules`, so `pty.node` and `spawn-helper` must be executable before signing.
 
+## Patch Package Metadata Lookup
+
+Target:
+
+`$APP/Contents/Resources/app/.vite/build/*.js`
+
+Codex package metadata lookup normally checks:
+
+- `process.resourcesPath/app.asar/package.json`
+- `process.cwd()/package.json`
+- `process.cwd()/electron/package.json`
+
+In the patched default-app launch path, `process.resourcesPath` resolves to `$APP/Contents/Resources/default_app`; the real app resources path is set by the launcher as `CODEX_ELECTRON_RESOURCES_PATH`.
+
+After unpacking, add the unpacked package candidate before the ASAR package candidate wherever this lookup appears:
+
+```diff
++ process.env.CODEX_ELECTRON_RESOURCES_PATH?.trim() &&
++   t.push(path.join(process.env.CODEX_ELECTRON_RESOURCES_PATH.trim(), `app`, `package.json`))
+  process.resourcesPath && t.push(path.join(process.resourcesPath, `app.asar`, `package.json`))
+```
+
+This keeps updater, build flavor, and related package metadata reads working without relying on `process.cwd()`.
+
+## Patch Sparkle Native Addon Path
+
+Target:
+
+`$APP/Contents/Resources/app/.vite/build/*.js`
+
+Sparkle normally loads its native addon from `path.join(process.resourcesPath, 'native', 'sparkle.node')`.
+
+In the patched default-app launch path, that points at `$APP/Contents/Resources/default_app/native/sparkle.node`. Load from the launcher-provided resources root:
+
+```diff
+- path.join(process.resourcesPath, `native`, `sparkle.node`)
++ path.join(process.env.CODEX_ELECTRON_RESOURCES_PATH?.trim() || process.resourcesPath, `native`, `sparkle.node`)
+```
+
+This keeps update checks using `$APP/Contents/Resources/native/sparkle.node`.
+
 ## Patch Electron Launcher
 
 Target:

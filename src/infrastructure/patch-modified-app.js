@@ -111,6 +111,54 @@ function restoreNativeExecutableBits() {
   run("chmod", ["+x", path.join(nativeRelease, "pty.node"), path.join(nativeRelease, "spawn-helper")]);
 }
 
+function patchPackageMetadataLookup() {
+  const metadataCandidate = /process\.resourcesPath&&t\.push\(([\w.]+)\.join\(process\.resourcesPath,`app\.asar`,`package\.json`\)\)/g;
+  let patched = 0;
+  for (const fileName of fs.readdirSync(vite)) {
+    if (!fileName.endsWith(".js")) {
+      continue;
+    }
+    const target = path.join(vite, fileName);
+    let source = read(target);
+    let filePatched = 0;
+    source = source.replace(metadataCandidate, (match, pathAlias) => {
+      filePatched += 1;
+      return `process.env.CODEX_ELECTRON_RESOURCES_PATH?.trim()&&t.push(${pathAlias}.join(process.env.CODEX_ELECTRON_RESOURCES_PATH.trim(),\`app\`,\`package.json\`)),${match}`;
+    });
+    if (filePatched > 0) {
+      write(target, source);
+      patched += filePatched;
+    }
+  }
+  if (patched === 0) {
+    throw new Error("package metadata lookup: expected app.asar package metadata candidate");
+  }
+}
+
+function patchSparkleNativeAddonPath() {
+  const sparkleAddonPath = /(\w+)\(\(0,([\w.]+)\.join\)\(process\.resourcesPath,`native`,`sparkle\.node`\)\)/g;
+  let patched = 0;
+  for (const fileName of fs.readdirSync(vite)) {
+    if (!fileName.endsWith(".js")) {
+      continue;
+    }
+    const target = path.join(vite, fileName);
+    let source = read(target);
+    let filePatched = 0;
+    source = source.replace(sparkleAddonPath, (match, loaderAlias, pathAlias) => {
+      filePatched += 1;
+      return `${loaderAlias}((0,${pathAlias}.join)(process.env.CODEX_ELECTRON_RESOURCES_PATH?.trim()||process.resourcesPath,\`native\`,\`sparkle.node\`))`;
+    });
+    if (filePatched > 0) {
+      write(target, source);
+      patched += filePatched;
+    }
+  }
+  if (patched === 0) {
+    throw new Error("sparkle native addon path: expected process.resourcesPath sparkle.node load");
+  }
+}
+
 function patchElectronLauncher() {
   const launcherFile = path.join(modified, "Contents/Resources/default_app/main.js");
   let launcher = read(launcherFile);
@@ -270,6 +318,8 @@ function installRuntimeExtensions() {
 resetModifiedApp();
 unpackAppAsar();
 restoreNativeExecutableBits();
+patchPackageMetadataLookup();
+patchSparkleNativeAddonPath();
 patchElectronLauncher();
 patchWebviewLoader();
 patchPreloadBridge();
