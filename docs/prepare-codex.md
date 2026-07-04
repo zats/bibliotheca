@@ -110,6 +110,23 @@ if (fs.existsSync(path.join(packagedAppPath, 'package.json'))) {
 
 Use the `else` branch. `node --check` rejects top-level `return` in this file.
 
+## Patch Package Metadata
+
+Target:
+
+`$APP/Contents/Resources/app/package.json`
+
+Add Bibliotheca metadata:
+
+```json
+{
+  "bibliothecaPatchPackVersion": "local",
+  "bibliothecaExtensionApiVersion": "1"
+}
+```
+
+The CLI reads these fields for `is-patched` and `launch --wait-for-ready` output.
+
 ## Patch Extension Loader
 
 Target:
@@ -158,7 +175,8 @@ extensions:{
   readExtensionRegistry:()=>e.ipcRenderer.invoke(`codex_extensions:read-extension-registry`),
   readExtensionScript:t=>e.ipcRenderer.invoke(`codex_extensions:read-extension-script`,t),
   readSettings:t=>e.ipcRenderer.invoke(`codex_extensions:read-settings`,t),
-  writeSettings:(t,n)=>e.ipcRenderer.invoke(`codex_extensions:write-settings`,t,n)
+  writeSettings:(t,n)=>e.ipcRenderer.invoke(`codex_extensions:write-settings`,t,n),
+  writeReadyProbe:()=>e.ipcRenderer.invoke(`codex_extensions:write-ready-probe`)
 },
 ```
 
@@ -176,6 +194,16 @@ src/infrastructure/extension-paths.js
 ```
 
 Append `src/infrastructure/main-extension-ipc.js`.
+
+This registers:
+
+- `codex_extensions:read-extension-registry`
+- `codex_extensions:read-extension-script`
+- `codex_extensions:read-settings`
+- `codex_extensions:write-settings`
+- `codex_extensions:write-ready-probe`
+
+`write-ready-probe` only writes when `BIBLIOTHECA_WAIT_FOR_READY=1`. It writes `$CODEX_HOME/extensions/.<process.pid>.json` after main-process extension IPC has registered. The same IPC can also be called by the webview bridge.
 
 ## Patch Thread Overflow Menu
 
