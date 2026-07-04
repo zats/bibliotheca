@@ -352,7 +352,7 @@ jobs:
 
       - name: Upload diagnostics
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: codex-patch-smoke-logs
           path: ${{ env.LOG_DIR }}
@@ -360,7 +360,7 @@ jobs:
 
       - name: Upload patched app
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: patched-codex-app
           path: ${{ env.PATCHED_APP_ZIP }}
