@@ -46,8 +46,14 @@ export default {
       return Response.json({ error: "Method not allowed" }, { status: 405 });
     }
 
-    const result = await check(env);
-    return Response.json(result);
+    try {
+      const result = await check(env);
+      return Response.json(result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(message);
+      return Response.json({ error: "check failed", message }, { status: 500 });
+    }
   },
 };
 
@@ -216,4 +222,3 @@ function decodeXml(value: string): string {
 function encodePath(path: string): string {
   return path.split("/").map(encodeURIComponent).join("/");
 }
-
