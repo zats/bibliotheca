@@ -1,0 +1,355 @@
+name: Codex patch smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      codex_app_url:
+        description: "Direct Codex app download URL"
+        required: true
+        type: string
+      codex_version:
+        description: "Expected Codex version"
+        required: false
+        type: string
+      timeout_seconds:
+        description: "Readiness timeout in seconds"
+        required: false
+        default: "30"
+        type: string
+
+run-name: "Codex patch smoke ${{ inputs.codex_version || 'manual' }}"
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: Patch and launch Codex
+    runs-on: macos-latest
+    timeout-minutes: 30
+
+    env:
+      CODEX_APP_URL: ${{ inputs.codex_app_url }}
+      EXPECTED_CODEX_VERSION: ${{ inputs.codex_version }}
+      READY_TIMEOUT_SECONDS: ${{ inputs.timeout_seconds }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Prepare diagnostics
+        run: |
+          set -euo pipefail
+          LOG_DIR="$RUNNER_TEMP/bibliotheca-logs"
+          WORK_DIR="$RUNNER_TEMP/bibliotheca-smoke"
+          CODEX_HOME="$RUNNER_TEMP/bibliotheca-codex-home"
+          CODEX_USER_DATA_DIR="$RUNNER_TEMP/bibliotheca-codex-profile"
+          {
+            echo "LOG_DIR=$LOG_DIR"
+            echo "WORK_DIR=$WORK_DIR"
+            echo "CODEX_HOME=$CODEX_HOME"
+            echo "CODEX_USER_DATA_DIR=$CODEX_USER_DATA_DIR"
+          } >> "$GITHUB_ENV"
+          mkdir -p "$LOG_DIR" "$WORK_DIR" "$CODEX_HOME/extensions" "$CODEX_USER_DATA_DIR"
+          {
+            echo "codex_app_url=$CODEX_APP_URL"
+            echo "expected_codex_version=$EXPECTED_CODEX_VERSION"
+            echo "ready_timeout_seconds=$READY_TIMEOUT_SECONDS"
+            echo "runner_os=$RUNNER_OS"
+            echo "home=$HOME"
+            echo "codex_home=$CODEX_HOME"
+            sw_vers
+            xcodebuild -version || true
+            swift --version || true
+            node --version || true
+            npm --version || true
+            security default-keychain -d user || true
+            security list-keychains -d user || true
+          } | tee "$LOG_DIR/environment.log"
+
+      - name: Create isolated keychain
+        id: keychain
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/bibliotheca.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          {
+            echo "keychain=$KEYCHAIN"
+            security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+            security set-keychain-settings -lut 21600 "$KEYCHAIN"
+            security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+            security default-keychain -d user -s "$KEYCHAIN"
+            security list-keychains -d user -s "$KEYCHAIN"
+            security default-keychain -d user
+            security list-keychains -d user
+          } 2>&1 | tee "$LOG_DIR/keychain-setup.log"
+          echo "keychain=$KEYCHAIN" >> "$GITHUB_OUTPUT"
+
+      - name: Install patch tools
+        run: |
+          set -euo pipefail
+          {
+            npm install --global @electron/asar
+            command -v asar
+            asar --version || true
+          } 2>&1 | tee "$LOG_DIR/install-tools.log"
+
+      - name: Download Codex app
+        run: |
+          set -euo pipefail
+          DOWNLOAD="$WORK_DIR/download"
+          mkdir -p "$DOWNLOAD"
+          URL_PATH="${CODEX_APP_URL%%\?*}"
+          FILE_NAME="${URL_PATH##*/}"
+          if [ -z "$FILE_NAME" ] || [ "$FILE_NAME" = "$URL_PATH" ]; then
+            FILE_NAME="Codex-download"
+          fi
+          ARCHIVE="$DOWNLOAD/$FILE_NAME"
+          {
+            echo "Downloading $CODEX_APP_URL"
+            curl --fail --location --retry 3 --retry-delay 5 --output "$ARCHIVE" "$CODEX_APP_URL"
+            file "$ARCHIVE"
+            ls -lh "$ARCHIVE"
+          } 2>&1 | tee "$LOG_DIR/download.log"
+          echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
+
+      - name: Extract Codex app
+        run: |
+          set -euo pipefail
+          EXTRACT="$WORK_DIR/extract"
+          mkdir -p "$EXTRACT"
+          {
+            case "$ARCHIVE" in
+              *.zip)
+                ditto -x -k "$ARCHIVE" "$EXTRACT"
+                ;;
+              *.dmg)
+                MOUNT_OUTPUT="$LOG_DIR/hdiutil-attach.log"
+                hdiutil attach "$ARCHIVE" -nobrowse -readonly > "$MOUNT_OUTPUT"
+                cat "$MOUNT_OUTPUT"
+                VOLUME="$(awk '/\/Volumes\// {print $NF; exit}' "$MOUNT_OUTPUT")"
+                if [ -z "$VOLUME" ]; then
+                  echo "Failed to find mounted volume" >&2
+                  exit 1
+                fi
+                cp -R "$VOLUME"/*.app "$EXTRACT/"
+                hdiutil detach "$VOLUME"
+                ;;
+              *.tar.gz|*.tgz)
+                tar -xzf "$ARCHIVE" -C "$EXTRACT"
+                ;;
+              *)
+                echo "Unsupported Codex archive type: $ARCHIVE" >&2
+                exit 1
+                ;;
+            esac
+            find "$EXTRACT" -maxdepth 3 -name '*.app' -print
+          } 2>&1 | tee "$LOG_DIR/extract.log"
+          APP_PATH="$(find "$EXTRACT" -maxdepth 3 -name '*.app' -type d | head -n 1)"
+          if [ -z "$APP_PATH" ]; then
+            echo "No .app bundle found after extraction" >&2
+            exit 1
+          fi
+          echo "CODEX_APP_PATH=$APP_PATH" >> "$GITHUB_ENV"
+
+      - name: Inspect clean app
+        run: |
+          set -euo pipefail
+          {
+            echo "CODEX_APP_PATH=$CODEX_APP_PATH"
+            /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$CODEX_APP_PATH/Contents/Info.plist" || true
+            /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$CODEX_APP_PATH/Contents/Info.plist" || true
+            /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$CODEX_APP_PATH/Contents/Info.plist" || true
+            find "$CODEX_APP_PATH/Contents/Resources" -maxdepth 2 -print | sort | head -n 200
+            codesign --verify --deep --strict --verbose=4 "$CODEX_APP_PATH" || true
+            spctl --assess --type execute --verbose=4 "$CODEX_APP_PATH" || true
+            xattr -lr "$CODEX_APP_PATH" || true
+          } 2>&1 | tee "$LOG_DIR/clean-app.log"
+
+      - name: Verify expected version
+        if: ${{ inputs.codex_version != '' }}
+        run: |
+          set -euo pipefail
+          ACTUAL="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$CODEX_APP_PATH/Contents/Info.plist")"
+          {
+            echo "expected=$EXPECTED_CODEX_VERSION"
+            echo "actual=$ACTUAL"
+          } | tee "$LOG_DIR/version-check.log"
+          test "$ACTUAL" = "$EXPECTED_CODEX_VERSION"
+
+      - name: Build Bibliotheca CLI
+        run: |
+          set -euo pipefail
+          {
+            swift build --configuration release
+            .build/release/bibliotheca --help
+            .build/release/bibliotheca patch --help
+            .build/release/bibliotheca launch --help
+          } 2>&1 | tee "$LOG_DIR/build-cli.log"
+
+      - name: Check clean patch state
+        run: |
+          set +e
+          .build/release/bibliotheca is-patched --codex-app-path "$CODEX_APP_PATH" > "$LOG_DIR/is-patched-before.json" 2> "$LOG_DIR/is-patched-before.stderr"
+          STATUS=$?
+          set -e
+          cat "$LOG_DIR/is-patched-before.json"
+          cat "$LOG_DIR/is-patched-before.stderr" >&2
+          echo "status=$STATUS" | tee "$LOG_DIR/is-patched-before.status"
+
+      - name: Patch app
+        run: |
+          set +e
+          .build/release/bibliotheca patch --codex-app-path "$CODEX_APP_PATH" > "$LOG_DIR/patch.json" 2> "$LOG_DIR/patch.stderr"
+          STATUS=$?
+          set -e
+          cat "$LOG_DIR/patch.json"
+          cat "$LOG_DIR/patch.stderr" >&2
+          echo "status=$STATUS" | tee "$LOG_DIR/patch.status"
+          exit "$STATUS"
+
+      - name: Inspect patched app
+        if: always()
+        run: |
+          set +e
+          {
+            echo "CODEX_APP_PATH=$CODEX_APP_PATH"
+            find "$CODEX_APP_PATH/Contents/Resources" -maxdepth 3 -print | sort | head -n 300
+            test -f "$CODEX_APP_PATH/Contents/Resources/app/package.json" && cat "$CODEX_APP_PATH/Contents/Resources/app/package.json"
+            codesign --verify --deep --strict --verbose=4 "$CODEX_APP_PATH"
+            spctl --assess --type execute --verbose=4 "$CODEX_APP_PATH"
+            xattr -lr "$CODEX_APP_PATH"
+          } 2>&1 | tee "$LOG_DIR/patched-app.log"
+
+      - name: Check patched state
+        run: |
+          set +e
+          .build/release/bibliotheca is-patched --codex-app-path "$CODEX_APP_PATH" > "$LOG_DIR/is-patched-after.json" 2> "$LOG_DIR/is-patched-after.stderr"
+          STATUS=$?
+          set -e
+          cat "$LOG_DIR/is-patched-after.json"
+          cat "$LOG_DIR/is-patched-after.stderr" >&2
+          echo "status=$STATUS" | tee "$LOG_DIR/is-patched-after.status"
+          exit "$STATUS"
+
+      - name: Launch and wait for ready probe
+        run: |
+          set +e
+          .build/release/bibliotheca launch \
+            --codex-app-path "$CODEX_APP_PATH" \
+            --wait-for-ready \
+            --timeout "${READY_TIMEOUT_SECONDS}s" \
+            --user-data-dir "$CODEX_USER_DATA_DIR" \
+            > "$LOG_DIR/launch.json" \
+            2> "$LOG_DIR/launch.stderr"
+          STATUS=$?
+          set -e
+          cat "$LOG_DIR/launch.json"
+          cat "$LOG_DIR/launch.stderr" >&2
+          echo "status=$STATUS" | tee "$LOG_DIR/launch.status"
+          exit "$STATUS"
+
+      - name: Package patched app artifact
+        if: always()
+        run: |
+          set +e
+          ARTIFACT_DIR="$RUNNER_TEMP/bibliotheca-artifacts"
+          mkdir -p "$ARTIFACT_DIR"
+          ditto -c -k --sequesterRsrc --keepParent "$CODEX_APP_PATH" "$ARTIFACT_DIR/patched-codex-app.zip" > "$LOG_DIR/package-app.log" 2>&1
+          echo "PATCHED_APP_ZIP=$ARTIFACT_DIR/patched-codex-app.zip" >> "$GITHUB_ENV"
+
+      - name: Collect diagnostics
+        if: always()
+        run: |
+          set +e
+          {
+            echo "Processes:"
+            ps aux | grep -E '[C]odex|[E]lectron|[B]ibliotheca' || true
+            echo
+            echo "Ready probe markers:"
+            find "$CODEX_HOME/extensions" -maxdepth 1 -name '.*.json' -print -exec cat {} \; || true
+            echo
+            echo "Extensions tree:"
+            find "$CODEX_HOME/extensions" -maxdepth 4 -print | sort || true
+            echo
+            echo "Keychain items mentioning Codex:"
+            security find-generic-password -s "Codex Storage Key" 2>&1 || true
+            echo
+            echo "Recent Codex/keychain logs:"
+            log show \
+              --last 5m \
+              --style compact \
+              --predicate 'process == "Codex" OR process == "securityd" OR eventMessage CONTAINS[c] "Codex" OR eventMessage CONTAINS[c] "keychain" OR eventMessage CONTAINS[c] "safeStorage" OR eventMessage CONTAINS[c] "Bibliotheca" OR eventMessage CONTAINS[c] "codex_extensions"' \
+              || true
+          } > "$LOG_DIR/diagnostics.log" 2>&1
+
+      - name: Summarize
+        if: always()
+        run: |
+          set +e
+          {
+            echo "## Codex patch smoke"
+            echo
+            echo "- Codex URL: \`$CODEX_APP_URL\`"
+            echo "- Codex app path: \`${CODEX_APP_PATH:-unknown}\`"
+            echo "- Expected version: \`${EXPECTED_CODEX_VERSION:-unspecified}\`"
+            echo
+            echo "### Status files"
+            for file in "$LOG_DIR"/*.status; do
+              [ -e "$file" ] || continue
+              echo "- \`$(basename "$file")\`: \`$(cat "$file")\`"
+            done
+            echo
+            echo "### CLI outputs"
+            for file in "$LOG_DIR"/*.json; do
+              [ -e "$file" ] || continue
+              echo
+              echo "\`$(basename "$file")\`"
+              echo
+              echo '```json'
+              cat "$file"
+              echo '```'
+            done
+            echo
+            echo "### Failure guide"
+            if [ -f "$LOG_DIR/patch.status" ] && ! grep -qx "status=0" "$LOG_DIR/patch.status"; then
+              echo "- Patch failed. Check \`patch.stderr\` and \`patched-app.log\`."
+            fi
+            if grep -qi "static-patch-check" "$LOG_DIR/launch.json" 2>/dev/null; then
+              echo "- Launch blocked because CLI did not detect patch markers."
+            fi
+            if grep -qi "Timed out waiting" "$LOG_DIR/launch.json" "$LOG_DIR/launch.stderr" 2>/dev/null; then
+              echo "- App launched but patched infra did not write the ready probe before timeout."
+            fi
+            if grep -qi "keychain\\|Codex Storage Key\\|safeStorage" "$LOG_DIR/diagnostics.log" 2>/dev/null; then
+              echo "- Keychain activity was present. Check \`diagnostics.log\`."
+            fi
+            if grep -qi '"ready"[[:space:]]*:[[:space:]]*true' "$LOG_DIR/launch.json" 2>/dev/null; then
+              echo "- Runtime ready probe received."
+            fi
+            if [ -f "${PATCHED_APP_ZIP:-}" ]; then
+              echo "- Patched app artifact uploaded as \`patched-codex-app\`."
+            fi
+          } | tee "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: codex-patch-smoke-logs
+          path: ${{ env.LOG_DIR }}
+          if-no-files-found: error
+
+      - name: Upload patched app
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: patched-codex-app
+          path: ${{ env.PATCHED_APP_ZIP }}
+          if-no-files-found: warn
+
+      - name: Cleanup keychain
+        if: always()
+        run: |
+          set +e
+          security delete-keychain "${{ steps.keychain.outputs.keychain }}" 2>&1 | tee "$LOG_DIR/keychain-cleanup.log"
