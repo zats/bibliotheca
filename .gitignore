@@ -28,6 +28,8 @@ temp/
 .env.*
 !.env.example
 
+.build
+
 apps/*.app/
 apps/**/*.app/
 apps/**/*.asar
