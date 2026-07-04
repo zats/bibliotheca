@@ -1,4 +1,4 @@
-name = "codex-version-watch"
+name = "codex-version-check-prode"
 main = "src/index.ts"
 compatibility_date = "2026-07-04"
 
@@ -7,10 +7,7 @@ GITHUB_OWNER = "zats"
 GITHUB_REPO = "bibliotheca"
 GITHUB_BRANCH = "main"
 GITHUB_STATE_PATH = ".github/codex-version-watch-state.json"
-GITHUB_WORKFLOW_ID = "codex-patch-smoke.yml"
 SPARKLE_FEED_URL = "https://persistent.oaistatic.com/codex-app-prod/appcast.xml"
-READY_TIMEOUT_SECONDS = "30"
 
 [triggers]
 crons = ["*/5 * * * *"]
-

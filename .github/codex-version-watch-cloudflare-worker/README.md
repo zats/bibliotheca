@@ -1,21 +1,23 @@
 # Codex Version Watch Cloudflare Worker
 
-GitHub scheduled workflows can be delayed or skipped. This Worker is an external cron source that checks the Codex Sparkle feed and triggers the GitHub patch smoke workflow when a new Codex version appears.
+GitHub scheduled workflows can be delayed or skipped. This Worker is an external cron source that checks the Codex Sparkle feed and opens a GitHub issue when a new Codex version appears.
 
 ## What It Does
 
 1. Reads the Sparkle feed.
 2. Reads `.github/codex-version-watch-state.json` from `main`.
 3. Exits if the latest version is already recorded.
-4. Dispatches `.github/workflows/codex-patch-smoke.yml` with `codex_app_url` and `codex_version`.
-5. Updates `.github/codex-version-watch-state.json` so the same version is not dispatched again.
+4. Opens a `codex-version-watch` issue with the version and download URL.
+5. Updates `.github/codex-version-watch-state.json` so the same version is not processed again.
+
+The issue triggers `.github/workflows/codex-smoke-orchestrator.yml`, and that workflow decides whether to run the patch smoke workflow.
 
 ## Setup
 
 Create a fine-grained GitHub token for `zats/bibliotheca` with:
 
 - Contents: read/write
-- Actions: write
+- Issues: read/write
 
 Then configure Cloudflare:
 
@@ -50,9 +52,6 @@ Important variables:
 - `GITHUB_REPO`: GitHub repo.
 - `GITHUB_BRANCH`: branch containing workflows and state.
 - `GITHUB_STATE_PATH`: path to the recorded latest version.
-- `GITHUB_WORKFLOW_ID`: workflow file to dispatch.
 - `SPARKLE_FEED_URL`: Codex Sparkle feed.
-- `READY_TIMEOUT_SECONDS`: smoke workflow readiness timeout.
 
 The cron schedule is also in `wrangler.toml`.
-

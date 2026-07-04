@@ -4,9 +4,7 @@ interface Env {
   GITHUB_REPO: string;
   GITHUB_BRANCH: string;
   GITHUB_STATE_PATH: string;
-  GITHUB_WORKFLOW_ID: string;
   SPARKLE_FEED_URL: string;
-  READY_TIMEOUT_SECONDS: string;
 }
 
 interface SparkleVersion {
@@ -23,10 +21,11 @@ interface GitHubState {
 }
 
 interface CheckResult {
-  dispatched: boolean;
+  issueOpened: boolean;
   version: string;
   recordedVersion: string | null;
-  workflowUrl?: string;
+  issueNumber?: number;
+  issueUrl?: string;
 }
 
 const userAgent = "bibliotheca-codex-version-watch-cloudflare-worker";
@@ -63,17 +62,18 @@ async function check(env: Env): Promise<CheckResult> {
   const recordedVersion = state.latestVersion ?? null;
 
   if (recordedVersion === latest.version) {
-    return { dispatched: false, version: latest.version, recordedVersion };
+    return { issueOpened: false, version: latest.version, recordedVersion };
   }
 
-  await dispatchWorkflow(env, latest);
-  await writeState(env, state.sha, latest);
+  const issue = await openVersionIssue(env, latest);
+  await writeState(env, state.sha, latest, issue);
 
   return {
-    dispatched: true,
+    issueOpened: issue.created,
     version: latest.version,
     recordedVersion,
-    workflowUrl: `https://github.com/${env.GITHUB_OWNER}/${env.GITHUB_REPO}/actions/workflows/${env.GITHUB_WORKFLOW_ID}`,
+    issueNumber: issue.number,
+    issueUrl: issue.url,
   };
 }
 
@@ -127,7 +127,7 @@ async function readState(env: Env): Promise<GitHubState> {
   return state;
 }
 
-async function writeState(env: Env, sha: string | undefined, latest: SparkleVersion): Promise<void> {
+async function writeState(env: Env, sha: string | undefined, latest: SparkleVersion, issue: VersionIssue): Promise<void> {
   const detectedAt = new Date();
   const publishedAt = new Date(latest.publishedAt);
   const state = {
@@ -136,10 +136,11 @@ async function writeState(env: Env, sha: string | undefined, latest: SparkleVers
     publishedAt: latest.publishedAt,
     detectedAt: detectedAt.toISOString(),
     detectionLagSeconds: Math.floor((detectedAt.getTime() - publishedAt.getTime()) / 1000),
+    issueNumber: issue.number,
+    issueUrl: issue.url,
+    issueOpenedAt: issue.openedAt,
     feedUrl: env.SPARKLE_FEED_URL,
     downloadUrl: latest.downloadUrl,
-    dispatchedWorkflow: env.GITHUB_WORKFLOW_ID,
-    dispatchedAt: detectedAt.toISOString(),
   };
 
   const body: Record<string, unknown> = {
@@ -166,26 +167,160 @@ async function writeState(env: Env, sha: string | undefined, latest: SparkleVers
   }
 }
 
-async function dispatchWorkflow(env: Env, latest: SparkleVersion): Promise<void> {
+interface VersionIssue {
+  created: boolean;
+  number: number;
+  openedAt: string;
+  url: string;
+}
+
+async function openVersionIssue(env: Env, latest: SparkleVersion): Promise<VersionIssue> {
+  await ensureLabel(env);
+
+  const title = `Codex ${latest.version} available`;
+  const existing = await findIssue(env, title);
+  if (existing != null) {
+    await addWatchLabel(env, existing.number);
+    return { ...existing, created: false };
+  }
+
+  const detectedAt = new Date();
   const response = await githubFetch(
     env,
-    `/repos/${env.GITHUB_OWNER}/${env.GITHUB_REPO}/actions/workflows/${encodeURIComponent(env.GITHUB_WORKFLOW_ID)}/dispatches`,
+    `/repos/${env.GITHUB_OWNER}/${env.GITHUB_REPO}/issues`,
     {
       method: "POST",
       body: JSON.stringify({
-        ref: env.GITHUB_BRANCH,
-        inputs: {
-          codex_app_url: latest.downloadUrl,
-          codex_version: latest.version,
-          timeout_seconds: env.READY_TIMEOUT_SECONDS,
-        },
+        title,
+        body: issueBody({
+          feedUrl: env.SPARKLE_FEED_URL,
+          latest,
+          detectedAt,
+          detectionLagSeconds: detectionLagSeconds(detectedAt, latest.publishedAt),
+          issueOpenedAt: "pending",
+        }),
       }),
     },
   );
 
-  if (response.status !== 204) {
-    throw new Error(`Workflow dispatch failed: ${response.status} ${await response.text()}`);
+  if (!response.ok) {
+    throw new Error(`Create issue failed: ${response.status} ${await response.text()}`);
   }
+
+  const issue = await response.json() as { number: number; html_url: string; created_at: string };
+  await updateIssueBody(env, issue.number, issueBody({
+    feedUrl: env.SPARKLE_FEED_URL,
+    latest,
+    detectedAt,
+    detectionLagSeconds: detectionLagSeconds(detectedAt, latest.publishedAt),
+    issueOpenedAt: issue.created_at,
+  }));
+  await addWatchLabel(env, issue.number);
+
+  return {
+    created: true,
+    number: issue.number,
+    openedAt: issue.created_at,
+    url: issue.html_url,
+  };
+}
+
+async function ensureLabel(env: Env): Promise<void> {
+  const response = await githubFetch(
+    env,
+    `/repos/${env.GITHUB_OWNER}/${env.GITHUB_REPO}/labels`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        name: "codex-version-watch",
+        color: "0969da",
+        description: "Issues opened by the Codex version watcher",
+      }),
+    },
+  );
+
+  if (!response.ok && response.status !== 422) {
+    throw new Error(`Create label failed: ${response.status} ${await response.text()}`);
+  }
+}
+
+async function findIssue(env: Env, title: string): Promise<Omit<VersionIssue, "created"> | null> {
+  const query = `repo:${env.GITHUB_OWNER}/${env.GITHUB_REPO} type:issue in:title "${title}"`;
+  const response = await githubFetch(env, `/search/issues?q=${encodeURIComponent(query)}&per_page=1`);
+  if (!response.ok) {
+    throw new Error(`Find issue failed: ${response.status} ${await response.text()}`);
+  }
+
+  const payload = await response.json() as { items: Array<{ number: number; html_url: string; created_at: string }> };
+  const issue = payload.items[0];
+  if (issue == null) {
+    return null;
+  }
+
+  return {
+    number: issue.number,
+    openedAt: issue.created_at,
+    url: issue.html_url,
+  };
+}
+
+async function updateIssueBody(env: Env, issueNumber: number, body: string): Promise<void> {
+  const response = await githubFetch(
+    env,
+    `/repos/${env.GITHUB_OWNER}/${env.GITHUB_REPO}/issues/${issueNumber}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ body }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Update issue failed: ${response.status} ${await response.text()}`);
+  }
+}
+
+async function addWatchLabel(env: Env, issueNumber: number): Promise<void> {
+  const response = await githubFetch(
+    env,
+    `/repos/${env.GITHUB_OWNER}/${env.GITHUB_REPO}/issues/${issueNumber}/labels`,
+    {
+      method: "POST",
+      body: JSON.stringify({ labels: ["codex-version-watch"] }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Add issue label failed: ${response.status} ${await response.text()}`);
+  }
+}
+
+function issueBody({ feedUrl, latest, detectedAt, detectionLagSeconds, issueOpenedAt }: {
+  feedUrl: string;
+  latest: SparkleVersion;
+  detectedAt: Date;
+  detectionLagSeconds: number;
+  issueOpenedAt: string;
+}): string {
+  return [
+    "Codex version detected from the Sparkle feed.",
+    "",
+    "| Field | Value |",
+    "| --- | --- |",
+    `| Version | \`${latest.version}\` |`,
+    `| Sparkle pubDate | \`${latest.publishedRaw}\` |`,
+    `| Published UTC | \`${latest.publishedAt}\` |`,
+    `| Detection UTC | \`${detectedAt.toISOString()}\` |`,
+    `| Detection lag seconds | \`${detectionLagSeconds}\` |`,
+    `| Issue opened UTC | \`${issueOpenedAt}\` |`,
+    `| Feed URL | ${feedUrl} |`,
+    `| Download URL | ${latest.downloadUrl} |`,
+    `| Source | Cloudflare Worker |`,
+    "",
+  ].join("\n");
+}
+
+function detectionLagSeconds(detectedAt: Date, publishedAt: string): number {
+  return Math.floor((detectedAt.getTime() - new Date(publishedAt).getTime()) / 1000);
 }
 
 function githubFetch(env: Env, path: string, init: RequestInit = {}): Promise<Response> {
