@@ -59,17 +59,12 @@
       return false;
     }
     const metadata = await packageMetadata();
-    await fs.promises.mkdir(path.dirname(probePath()), { recursive: true });
-    await fs.promises.writeFile(
-      probePath(),
-      `${JSON.stringify({
-        timestamp: new Date().toISOString(),
-        codexAppPath: codexAppPath(),
-        platform: os.platform(),
-        ...metadata,
-      })}\n`,
-      "utf8",
-    );
+    await writeJson(probePath(), {
+      timestamp: new Date().toISOString(),
+      codexAppPath: codexAppPath(),
+      platform: os.platform(),
+      ...metadata,
+    });
     return true;
   }
 
