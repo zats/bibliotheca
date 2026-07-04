@@ -15,7 +15,8 @@ Use the app Sparkle feed to download the latest build:
 
 `https://persistent.oaistatic.com/codex-app-prod/appcast.xml`
 
-Copy `Codex.app` to the target path and set `APP` to that path.
+The first item is the newest advertised build; the last item is the oldest advertised build.
+Download the selected `enclosure` URL, extract `Codex.app`, copy it to the target path, and set `APP` to that path.
 
 ## Unpack
 
@@ -85,8 +86,10 @@ Patch:
 
 ```diff
 + <script defer src="./codex-extension-loader.js"></script>
-  <script type="module" crossorigin src="./assets/index-CUYAyYU6.js"></script>
+  <script type="module" crossorigin src="./assets/index-<build-hash>.js"></script>
 ```
+
+Discover the current `assets/index-*.js` script tag from `index.html`; the hash changes by build.
 
 Patch CSP:
 
@@ -132,12 +135,12 @@ Target:
 
 `$APP/Contents/Resources/app/webview/assets/thread-overflow-menu-*.js`
 
-Add helpers near the thread overflow component:
+Add helpers immediately before the thread overflow component.
 
 Anchor:
 
 ```js
-function mt({conversationId:e,
+function <threadMenuComponent>({conversationId:
 ```
 
 ```
@@ -149,12 +152,42 @@ CXRenderMenuItem
 CXThreadMenuItems
 ```
 
-Insert the extension menu item component after archive.
+Use the current file's aliases:
 
-Anchor:
+- React alias: the object used for `useState` / `useEffect` in the thread menu component.
+- JSX alias: the object used for `.jsx` / `.jsxs`.
+- Menu primitive alias: the object used for existing `.Item`, `.Separator`, and `.FlyoutSubmenuItem` calls.
+
+Insert `CXThreadContext` at the start of the returned fragment so extensions can read current thread context.
+
+Build context from the current component variables:
 
 ```js
-children:(0,$.jsx)(u,{...L.archiveThread})}),null,(0,$.jsx)(d.Separator,{})
+{
+  conversationId,
+  cwd,
+  title,
+  canPin,
+  isPinned,
+  isWorktreeThread,
+  hasSideChatTab,
+  canOpenSideChat,
+  canFork,
+  canForkIntoWorktree,
+  canAddScheduledTask,
+  canOpenInNewWindow,
+  isTurnInProgress,
+  archiveNavigation,
+  archiveSource
+}
+```
+
+Insert `CXThreadMenuItems` immediately after the archive item and before the next separator. Match the current file's archive item and separator aliases; minified aliases change by build.
+
+Typical shape:
+
+```js
+archiveThread item, CXThreadMenuItems, Separator
 ```
 
 ## Browser Use Patch
@@ -163,10 +196,13 @@ Target:
 
 `$APP/Contents/Resources/app/.vite/build/main-*.js`
 
-Patch `cd()` to authorize the native-pipe peer:
+Locate the function near `browser-use-native-pipe-peer-authorizer` that returns `missing-package-build-flavor` for packaged builds without package metadata.
+The function name changes by build.
+
+Patch that function to authorize the native-pipe peer before the darwin/package checks:
 
 ```js
-function cd(){return()=>({authorized:!0});if(process.platform!==`darwin`)return()=>({authorized:!0});
+function <peerAuthorizer>(){return()=>({authorized:!0});if(process.platform!==`darwin`)return()=>({authorized:!0});
 ```
 
 This is required after ad hoc signing.
@@ -181,6 +217,9 @@ Sync extension source into `~/.codex/extensions/<extension-id>/src/main.js` and 
 codesign --force --deep --sign - "$APP"
 codesign --verify --deep --strict "$APP"
 node --check "$APP"/Contents/Resources/default_app/main.js
+node --check "$APP"/Contents/Resources/app/.vite/build/preload.js
+node --check "$APP"/Contents/Resources/app/.vite/build/main-*.js
+node --check "$APP"/Contents/Resources/app/webview/assets/thread-overflow-menu-*.js
 ```
 
 ## Smoke Tests
