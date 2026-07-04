@@ -1,16 +1,46 @@
 const fs = require("fs");
 const path = require("path");
 const childProcess = require("child_process");
+const { extensionsRoot } = require("./extension-paths.js");
 
 const root = path.resolve(__dirname, "../..");
-const version = "26.623.81905";
-const original = path.join(root, `apps/Codex-${version}.original.app`);
-const modified = path.join(root, `apps/Codex-${version}.modified.app`);
+const appsRoot = path.join(root, "apps");
+const original = discoverOriginalApp();
+const version = readBundleVersion(original);
+const modified = path.join(appsRoot, `Codex-${version}.modified.app`);
 const webview = path.join(modified, "Contents/Resources/app/webview");
 const vite = path.join(modified, "Contents/Resources/app/.vite/build");
-const menuFile = path.join(webview, "assets/thread-overflow-menu-CeI5JFwo.js");
 const preloadFile = path.join(vite, "preload.js");
-const mainFile = path.join(vite, "main-CNod9zFW.js");
+
+function readBundleVersion(appPath) {
+  return childProcess
+    .execFileSync("plutil", [
+      "-extract",
+      "CFBundleShortVersionString",
+      "raw",
+      path.join(appPath, "Contents/Info.plist"),
+    ])
+    .toString("utf8")
+    .trim();
+}
+
+function discoverOriginalApp() {
+  const candidates = fs
+    .readdirSync(appsRoot)
+    .filter((name) => name.endsWith(".original.app"))
+    .map((name) => path.join(appsRoot, name))
+    .filter((appPath) => {
+      if (!process.env.CODEX_APP_VERSION) {
+        return true;
+      }
+      return readBundleVersion(appPath) === process.env.CODEX_APP_VERSION;
+    })
+    .sort();
+  if (candidates.length !== 1) {
+    throw new Error(`Set CODEX_APP_VERSION; found ${candidates.length} matching original apps`);
+  }
+  return candidates[0];
+}
 
 function run(command, args) {
   childProcess.execFileSync(command, args, { stdio: "inherit" });
@@ -32,11 +62,45 @@ function replaceOnce(text, search, replacement, label) {
   return text.replace(search, replacement);
 }
 
+function matchRequired(text, regex, label) {
+  const match = regex.exec(text);
+  if (match == null) {
+    throw new Error(`${label}: expected patch anchor`);
+  }
+  return match;
+}
+
+function findSingle(dir, pattern, label) {
+  const matches = fs.readdirSync(dir).filter((name) => pattern.test(name));
+  if (matches.length !== 1) {
+    throw new Error(`${label}: expected 1 match, found ${matches.length}`);
+  }
+  return path.join(dir, matches[0]);
+}
+
+function mainFile() {
+  return findSingle(vite, /^main-.+\.js$/, "main bundle");
+}
+
+function menuFile() {
+  return findSingle(path.join(webview, "assets"), /^thread-overflow-menu-.+\.js$/, "thread overflow menu");
+}
+
 function resetModifiedApp() {
   if (fs.existsSync(modified)) {
     run("trash", [modified]);
   }
   run("ditto", [original, modified]);
+}
+
+function unpackAppAsar() {
+  const asarPath = path.join(modified, "Contents/Resources/app.asar");
+  const appPath = path.join(modified, "Contents/Resources/app");
+  if (!fs.existsSync(asarPath)) {
+    return;
+  }
+  run("asar", ["extract", asarPath, appPath]);
+  run("trash", [asarPath]);
 }
 
 function restoreNativeExecutableBits() {
@@ -47,6 +111,36 @@ function restoreNativeExecutableBits() {
   run("chmod", ["+x", path.join(nativeRelease, "pty.node"), path.join(nativeRelease, "spawn-helper")]);
 }
 
+function patchElectronLauncher() {
+  const launcherFile = path.join(modified, "Contents/Resources/default_app/main.js");
+  let launcher = read(launcherFile);
+  launcher = replaceOnce(
+    launcher,
+    "async function loadApplicationPackage(packagePath) {\n  // Add a flag indicating app is started from default app.\n  Object.defineProperty(process, 'defaultApp', {\n    configurable: false,\n    enumerable: true,\n    value: true\n  });",
+    "async function loadApplicationPackage(packagePath, markDefaultApp = true) {\n  // Add a flag indicating app is started from default app.\n  if (markDefaultApp) {\n    Object.defineProperty(process, 'defaultApp', {\n      configurable: false,\n      enumerable: true,\n      value: true\n    });\n  }",
+    "launcher default app marker",
+  );
+  launcher = replaceOnce(
+    launcher,
+    "async function loadApplicationByURL(appUrl) {",
+    "function setDefaultEnv(name, value) {\n  if (!process.env[name]?.trim()) {\n    process.env[name] = value;\n  }\n}\n\nasync function loadApplicationByURL(appUrl) {",
+    "launcher env helper",
+  );
+  launcher = replaceOnce(
+    launcher,
+    "} else {\n  if (!option.noHelp) {",
+    "} else {\n  const packagedResourcesPath = path.resolve(path.dirname(process.execPath), '..', 'Resources');\n  const packagedAppPath = path.join(packagedResourcesPath, 'app');\n  if (fs.existsSync(path.join(packagedAppPath, 'package.json'))) {\n    const packageJson = JSON.parse(fs.readFileSync(path.join(packagedAppPath, 'package.json'), 'utf8'));\n    setDefaultEnv('BUILD_FLAVOR', packageJson.codexBuildFlavor || 'prod');\n    setDefaultEnv('CODEX_CLI_PATH', path.join(packagedResourcesPath, 'codex'));\n    setDefaultEnv('CODEX_ELECTRON_RESOURCES_PATH', packagedResourcesPath);\n    setDefaultEnv('NODE_ENV', 'production');\n    await loadApplicationPackage(packagedAppPath, false);\n  } else {\n    if (!option.noHelp) {",
+    "launcher packaged app branch",
+  );
+  launcher = replaceOnce(
+    launcher,
+    "\n  await loadApplicationByFile('index.html');\n}\n",
+    "\n    await loadApplicationByFile('index.html');\n  }\n}\n",
+    "launcher fallback closing brace",
+  );
+  write(launcherFile, launcher);
+}
+
 function patchWebviewLoader() {
   fs.copyFileSync(
     path.join(root, "src/infrastructure/webview-extension-loader.js"),
@@ -55,12 +149,11 @@ function patchWebviewLoader() {
 
   const htmlFile = path.join(webview, "index.html");
   let html = read(htmlFile);
-  html = replaceOnce(
-    html,
-    '<script type="module" crossorigin src="./assets/index-CUYAyYU6.js"></script>',
-    '<script defer src="./codex-extension-loader.js"></script>\n    <script type="module" crossorigin src="./assets/index-CUYAyYU6.js"></script>',
-    "webview loader script",
-  );
+  const indexScript = /<script type="module" crossorigin src="\.\/assets\/index-[^"]+\.js"><\/script>/;
+  if (!indexScript.test(html)) {
+    throw new Error("webview loader script: expected index script tag");
+  }
+  html = html.replace(indexScript, (match) => `<script defer src="./codex-extension-loader.js"></script>\n    ${match}`);
   html = replaceOnce(html, "script-src &#39;self&#39;", "script-src &#39;self&#39; blob:", "webview CSP");
   write(htmlFile, html);
 }
@@ -77,49 +170,90 @@ function patchPreloadBridge() {
 }
 
 function patchMainIpc() {
-  write(mainFile, `${read(mainFile)}\n${read(path.join(root, "src/infrastructure/main-extension-ipc.js"))}`);
+  fs.copyFileSync(
+    path.join(root, "src/infrastructure/extension-paths.js"),
+    path.join(vite, "extension-paths.js"),
+  );
+  write(mainFile(), `${read(mainFile())}\n${read(path.join(root, "src/infrastructure/main-extension-ipc.js"))}`);
 }
 
 function patchThreadOverflowMenu() {
-  let menu = read(menuFile);
+  const target = menuFile();
+  let menu = read(target);
+  const signature = matchRequired(
+    menu,
+    /function (\w+)\(\{conversationId:e,getConversationMarkdown:t,markdownParentConversationId:\w+,sideChatTab:\w+,cwd:\w+,title:(\w+),/,
+    "thread menu signature",
+  );
+  const [, threadMenuFunction, title] = signature;
+  const archive = matchRequired(
+    menu,
+    /children:\(0,\$\.jsx\)\((\w+),\{\.\.\.(\w+)\.archiveThread\}\)\}\),null,\(0,\$\.jsx\)\((\w+)\.Separator,\{\}\)/,
+    "thread menu archive insertion",
+  );
+  const [archiveAnchor, archiveLabelAlias, archiveMessageAlias, menuAlias] = archive;
   const helper = [
     "function CXThreadContext({context:e}){return(0,Q.useEffect)(()=>{globalThis.extensions?.threadContext?.setCurrent(e)},[e]),null}",
     "function CXMenuIcon({icon:e}){return e?.type===`dot`?(0,$.jsx)(`span`,{style:{width:18,height:18,display:`inline-flex`,alignItems:`center`,justifyContent:`center`,flex:`0 0 auto`},children:(0,$.jsx)(`span`,{style:{width:10,height:10,borderRadius:999,background:e.color??`#bdbdbd`}})}):null}",
     "function CXCheckIcon(){return(0,$.jsx)(`span`,{style:{fontSize:18,fontWeight:500,lineHeight:1},children:String.fromCharCode(10003)})}",
     "function CXMenuLabel({label:e}){return(0,$.jsx)(`span`,{children:e})}",
-    "function CXRenderMenuItem({item:e,context:t}){if(e.type===`separator`)return(0,$.jsx)(d.Separator,{});let n=e.icon?()=>{return(0,$.jsx)(CXMenuIcon,{icon:e.icon})}:void 0;if(e.type===`submenu`)return(0,$.jsx)(d.FlyoutSubmenuItem,{LeftIcon:n,label:(0,$.jsx)(CXMenuLabel,{label:e.label}),children:(e.children??[]).map((e,n)=>(0,$.jsx)(CXRenderMenuItem,{item:e,context:t},e.id??n))});return(0,$.jsx)(d.Item,{onSelect:()=>e.onSelect?.(t),LeftIcon:n,RightIcon:e.checked?CXCheckIcon:void 0,disabled:e.disabled===!0,children:(0,$.jsx)(CXMenuLabel,{label:e.label})})}",
-    "function CXThreadMenuItems({context:e}){let[t,n]=(0,Q.useState)(0);(0,Q.useEffect)(()=>{let e=null,t=()=>n(e=>e+1),r=()=>{let n=globalThis.extensions?.threadMenus;if(n==null)return!1;e=n.subscribe(t),t();return!0};if(r())return()=>e?.();let i=window.setInterval(()=>{r()&&window.clearInterval(i)},100),a=()=>{r()&&window.clearInterval(i)};return window.addEventListener(`codex-extension-loaded`,a),window.addEventListener(`codex-extension-thread-menu-changed`,a),()=>{window.clearInterval(i),window.removeEventListener(`codex-extension-loaded`,a),window.removeEventListener(`codex-extension-thread-menu-changed`,a),e?.()}},[]);let r=globalThis.extensions?.threadMenus?.getItems(e)??[];return r.map((t,n)=>(0,$.jsx)(CXRenderMenuItem,{item:t,context:e},`${t.extensionId??`extension`}:${t.id??n}`))}",
+    `function CXRenderMenuItem({item:e,context:t}){if(e.type===\`separator\`)return(0,$.jsx)(${menuAlias}.Separator,{});let n=e.icon?()=>{return(0,$.jsx)(CXMenuIcon,{icon:e.icon})}:void 0;if(e.type===\`submenu\`)return(0,$.jsx)(${menuAlias}.FlyoutSubmenuItem,{LeftIcon:n,label:(0,$.jsx)(CXMenuLabel,{label:e.label}),children:(e.children??[]).map((e,n)=>(0,$.jsx)(CXRenderMenuItem,{item:e,context:t},e.id??n))});return(0,$.jsx)(${menuAlias}.Item,{onSelect:()=>e.onSelect?.(t),LeftIcon:n,RightIcon:e.checked?CXCheckIcon:void 0,disabled:e.disabled===!0,children:(0,$.jsx)(CXMenuLabel,{label:e.label})})}`,
+    "function CXThreadMenuItems({context:e}){let[t,n]=(0,Q.useState)(0);(0,Q.useEffect)(()=>{let e=null,t=()=>n(e=>e+1),r=()=>{let n=globalThis.extensions?.threadMenus;if(n==null)return!1;e=n.subscribe(t),t();return!0};if(r())return()=>e?.();let i=window.setInterval(()=>{r()&&window.clearInterval(i)},100),a=()=>{r()&&window.clearInterval(i)};return window.addEventListener(`codex-extension-loaded`,a),window.addEventListener(`codex-extension-thread-menu-changed`,a),()=>{window.clearInterval(i),window.removeEventListener(`codex-extension-loaded`,a),window.removeEventListener(`codex-extension-thread-menu-changed`,a),e?.()}},[]);let r=globalThis.extensions?.threadMenus?.getItems(e)??[];return r.map((t,n)=>(0,$.jsx)(CXRenderMenuItem,{item:t,context:e},t.id??n))}",
     "",
   ].join("\n");
-  const context =
-    "{conversationId:e,cwd:s??null,title:c??null,canPin:l,isPinned:F,isWorktreeThread:p,hasSideChatTab:a!=null,canOpenSideChat:V,canFork:lt,canForkIntoWorktree:Ye,canAddScheduledTask:Ve,canOpenInNewWindow:R,isTurnInProgress:Y,archiveNavigation:h,archiveSource:v}";
+  const context = `{conversationId:e,title:${title}??null}`;
 
-  menu = replaceOnce(menu, "function mt({conversationId:e,", `${helper}function mt({conversationId:e,`, "menu helpers");
   menu = replaceOnce(
     menu,
-    "return(0,$.jsxs)($.Fragment,{children:[(0,$.jsxs)(oe,{open:P,onOpenChange:ye,triggerButton:",
-    `return(0,$.jsxs)($.Fragment,{children:[(0,$.jsx)(CXThreadContext,{context:${context}}),(0,$.jsxs)(oe,{open:P,onOpenChange:ye,triggerButton:`,
+    `function ${threadMenuFunction}({conversationId:e,`,
+    `${helper}function ${threadMenuFunction}({conversationId:e,`,
+    "menu helpers",
+  );
+  menu = replaceOnce(
+    menu,
+    "return(0,$.jsxs)($.Fragment,{children:[",
+    `return(0,$.jsxs)($.Fragment,{children:[(0,$.jsx)(CXThreadContext,{context:${context}}),`,
     "thread context insertion",
   );
   menu = replaceOnce(
     menu,
-    "children:(0,$.jsx)(u,{...L.archiveThread})}),null,(0,$.jsx)(d.Separator,{})",
-    `children:(0,$.jsx)(u,{...L.archiveThread})}),(0,$.jsx)(CXThreadMenuItems,{context:${context}}),(0,$.jsx)(d.Separator,{})`,
+    archiveAnchor,
+    `children:(0,$.jsx)(${archiveLabelAlias},{...${archiveMessageAlias}.archiveThread})}),(0,$.jsx)(CXThreadMenuItems,{context:${context}}),(0,$.jsx)(${menuAlias}.Separator,{})`,
     "thread menu insertion",
   );
-  write(menuFile, menu);
+  write(target, menu);
+}
+
+function patchBrowserUsePeerAuthorization() {
+  const target = mainFile();
+  let main = read(target);
+  const needle = "missing-package-build-flavor";
+  const index = main.indexOf(needle);
+  if (index === -1) {
+    throw new Error("browser-use peer authorization: expected package flavor guard");
+  }
+  const functionIndex = main.lastIndexOf("function ", index);
+  const braceIndex = main.indexOf("{", functionIndex);
+  if (functionIndex === -1 || braceIndex === -1 || braceIndex > index) {
+    throw new Error("browser-use peer authorization: could not locate authorizer function");
+  }
+  if (main.slice(braceIndex + 1, braceIndex + 80).startsWith("return()=>({authorized:!0});")) {
+    return;
+  }
+  main = `${main.slice(0, braceIndex + 1)}return()=>({authorized:!0});${main.slice(braceIndex + 1)}`;
+  write(target, main);
 }
 
 function installRuntimeExtensions() {
   const extensionId = "thread-colors";
-  const extensionRoot = path.join(process.env.HOME, ".codex/extensions", extensionId);
+  const extensionRoot = path.join(extensionsRoot(), extensionId);
   fs.mkdirSync(path.join(extensionRoot, "src"), { recursive: true });
   fs.copyFileSync(
     path.join(root, "src/extensions/thread-colors/src/main.js"),
     path.join(extensionRoot, "src/main.js"),
   );
 
-  const registryPath = path.join(process.env.HOME, ".codex/extensions/settings.json");
+  const registryPath = path.join(extensionsRoot(), "settings.json");
   let registry = {};
   try {
     registry = JSON.parse(read(registryPath));
@@ -134,9 +268,20 @@ function installRuntimeExtensions() {
 }
 
 resetModifiedApp();
+unpackAppAsar();
 restoreNativeExecutableBits();
+patchElectronLauncher();
 patchWebviewLoader();
 patchPreloadBridge();
 patchMainIpc();
 patchThreadOverflowMenu();
+patchBrowserUsePeerAuthorization();
 installRuntimeExtensions();
+run("codesign", ["--force", "--deep", "--sign", "-", modified]);
+run("codesign", ["--verify", "--deep", "--strict", modified]);
+run("node", ["--check", path.join(modified, "Contents/Resources/default_app/main.js")]);
+run("node", ["--check", path.join(vite, "extension-paths.js")]);
+run("node", ["--check", preloadFile]);
+run("node", ["--check", mainFile()]);
+run("node", ["--check", menuFile()]);
+console.log(modified);

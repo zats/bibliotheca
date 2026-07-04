@@ -2,12 +2,8 @@
   const { ipcMain } = require("electron");
   const fs = require("fs");
   const path = require("path");
-  const os = require("os");
+  const { extensionsRoot } = require("./extension-paths.js");
   const EXTENSION_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-
-  function extensionsRoot() {
-    return path.join(os.homedir(), ".codex", "extensions");
-  }
 
   function registryPath() {
     return path.join(extensionsRoot(), "settings.json");
