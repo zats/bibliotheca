@@ -16,6 +16,21 @@ on:
         required: false
         default: "30"
         type: string
+  workflow_call:
+    inputs:
+      codex_app_url:
+        description: "Direct Codex app download URL"
+        required: true
+        type: string
+      codex_version:
+        description: "Expected Codex version"
+        required: false
+        type: string
+      timeout_seconds:
+        description: "Readiness timeout in seconds"
+        required: false
+        default: "30"
+        type: string
 
 run-name: "Codex patch smoke ${{ inputs.codex_version || 'manual' }}"
 

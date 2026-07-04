@@ -1,0 +1,159 @@
+name: Codex smoke orchestrator
+
+on:
+  issues:
+    types: [opened, labeled]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: "Issue number to process"
+        required: true
+        type: string
+
+run-name: "Codex smoke orchestration #${{ github.event.issue.number || inputs.issue_number }}"
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: codex-smoke-issue-${{ github.event.issue.number || inputs.issue_number }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Prepare issue
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.prepare.outputs.should_run }}
+      codex_version: ${{ steps.prepare.outputs.codex_version }}
+      codex_app_url: ${{ steps.prepare.outputs.codex_app_url }}
+    steps:
+      - name: Inspect issue
+        id: prepare
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number || inputs.issue_number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+
+          for label in codex-version-watch codex-smoke-running codex-smoke-passed codex-smoke-failed; do
+            gh label create "$label" \
+              --repo "$GITHUB_REPOSITORY" \
+              --color "0969da" \
+              --description "$label" \
+              2>/dev/null || true
+          done
+
+          issue_json="$(gh issue view "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --json body,labels,url)"
+          export issue_json
+
+          python3 <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          import os
+          import re
+          import sys
+
+          issue = json.loads(os.environ["issue_json"])
+          labels = {label["name"] for label in issue["labels"]}
+          body = issue.get("body") or ""
+
+          def out(name, value):
+              print(f"{name}={value}")
+
+          if "codex-version-watch" not in labels:
+              out("should_run", "false")
+              out("skip_reason", "missing-watch-label")
+              sys.exit(0)
+
+          smoke_labels = {"codex-smoke-running", "codex-smoke-passed", "codex-smoke-failed"}
+          if labels & smoke_labels:
+              out("should_run", "false")
+              out("skip_reason", "already-processed")
+              sys.exit(0)
+
+          version = None
+          download_url = None
+          for raw_line in body.splitlines():
+              line = raw_line.strip()
+              cells = [cell.strip().strip("`") for cell in line.strip("|").split("|")]
+              if len(cells) < 2:
+                  continue
+              key = cells[0].lower()
+              value = cells[1]
+              if key == "version":
+                  version = value
+              elif key == "download url":
+                  download_url = value
+
+          if not version:
+              match = re.search(r"Version\s*\|\s*`?([^`|\n]+)`?", body, re.I)
+              version = match.group(1).strip() if match else None
+          if not download_url:
+              match = re.search(r"https://\S*Codex[^\s|`]+", body)
+              download_url = match.group(0).strip() if match else None
+
+          if not version or not download_url:
+              out("should_run", "false")
+              out("skip_reason", "parse-failed")
+              sys.exit(0)
+
+          out("should_run", "true")
+          out("codex_version", version)
+          out("codex_app_url", download_url)
+          PY
+
+          should_run="$(grep '^should_run=' "$GITHUB_OUTPUT" | tail -n 1 | cut -d= -f2-)"
+          skip_reason="$(grep '^skip_reason=' "$GITHUB_OUTPUT" | tail -n 1 | cut -d= -f2- || true)"
+
+          if [ "$skip_reason" = "parse-failed" ]; then
+            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --add-label codex-smoke-failed
+            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "I could not start the smoke test because the issue is missing a Codex version or download URL."
+            exit 0
+          fi
+
+          if [ "$should_run" != "true" ]; then
+            echo "Skipping issue #$ISSUE_NUMBER: ${skip_reason:-unknown}"
+            exit 0
+          fi
+
+          version="$(grep '^codex_version=' "$GITHUB_OUTPUT" | tail -n 1 | cut -d= -f2-)"
+          gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --add-label codex-smoke-running
+          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "Started Codex patch smoke test for ${version}. Run: ${RUN_URL}"
+
+  smoke:
+    name: Run smoke test
+    needs: prepare
+    if: needs.prepare.outputs.should_run == 'true'
+    uses: ./.github/workflows/codex-patch-smoke.yml
+    with:
+      codex_app_url: ${{ needs.prepare.outputs.codex_app_url }}
+      codex_version: ${{ needs.prepare.outputs.codex_version }}
+      timeout_seconds: "45"
+
+  finish:
+    name: Finish issue
+    runs-on: ubuntu-latest
+    needs: [prepare, smoke]
+    if: always() && needs.prepare.outputs.should_run == 'true'
+    steps:
+      - name: Update issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number || inputs.issue_number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SMOKE_RESULT: ${{ needs.smoke.result }}
+        run: |
+          set -euo pipefail
+
+          gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label codex-smoke-running 2>/dev/null || true
+
+          if [ "$SMOKE_RESULT" = "success" ]; then
+            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --add-label codex-smoke-passed
+            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "Smoke test passed. Patched Codex launched and reported ready. Artifacts are available on the run: ${RUN_URL}"
+            gh issue close "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --comment "Closing this because the smoke test passed."
+          else
+            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --add-label codex-smoke-failed
+            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "Smoke test failed. I left diagnostics and patched app artifacts on the run for inspection: ${RUN_URL}"
+          fi
