@@ -2,8 +2,6 @@ name: Codex version watch
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "*/5 * * * *"
 
 permissions:
   contents: write
