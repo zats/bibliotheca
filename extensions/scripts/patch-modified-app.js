@@ -1,7 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const childProcess = require("child_process");
-const { extensionsRoot } = require("./extension-paths.js");
+const { extensionsRoot } = require("../runtime/extension-paths.js");
 
 const root = path.resolve(__dirname, "../..");
 const appsRoot = path.join(root, "apps");
@@ -197,7 +197,7 @@ function patchElectronLauncher() {
 
 function patchWebviewLoader() {
   fs.copyFileSync(
-    path.join(root, "extensions/infrastructure/webview-extension-loader.js"),
+    path.join(root, "extensions/runtime/webview-extension-loader.js"),
     path.join(webview, "codex-extension-loader.js"),
   );
 
@@ -233,10 +233,10 @@ function patchPackageJsonMetadata() {
 
 function patchMainIpc() {
   fs.copyFileSync(
-    path.join(root, "extensions/infrastructure/extension-paths.js"),
+    path.join(root, "extensions/runtime/extension-paths.js"),
     path.join(vite, "extension-paths.js"),
   );
-  write(mainFile(), `${read(mainFile())}\n${read(path.join(root, "extensions/infrastructure/main-extension-ipc.js"))}`);
+  write(mainFile(), `${read(mainFile())}\n${read(path.join(root, "extensions/runtime/main-extension-ipc.js"))}`);
 }
 
 function patchThreadOverflowMenu() {

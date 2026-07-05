@@ -37,7 +37,7 @@ The companion app should classify a Codex install as:
 - `runtime-verification-failed`
 - `unknown`
 
-File checks can show likely patch state. Runtime ping/pong is the proof that patched Codex loaded the extension infrastructure.
+File checks can show likely patch state. Runtime ping/pong is the proof that patched Codex loaded the extension runtime.
 
 ## Runtime Bridge
 
@@ -56,7 +56,7 @@ The bridge should also support:
 - Codex requests for extension source and settings
 - Codex reporting `bundleVersion`, `patchPackVersion`, and `extensionApiVersion`
 
-Transport can be loopback HTTP, WebSocket, or a Unix domain socket. Use a local auth token so unrelated local processes cannot control extension infrastructure.
+Transport can be loopback HTTP, WebSocket, or a Unix domain socket. Use a local auth token so unrelated local processes cannot control extension runtime.
 
 ## Patching Flow
 
@@ -105,7 +105,7 @@ Patch packs are versioned units of patching logic and metadata. A patch pack sho
   "supportedCodexVersions": [">=26.623.42026 <=26.623.101652"],
   "verifiedCodexVersions": ["26.623.101652"],
   "extensionApiVersion": "1",
-  "patcherEntry": "extensions/infrastructure/patch-modified-app.js",
+  "patcherEntry": "extensions/scripts/patch-modified-app.js",
   "verification": ["codesign", "node-check", "runtime-ping"]
 }
 ```

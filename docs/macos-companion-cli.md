@@ -11,7 +11,7 @@ First version:
 - caller passes the exact Codex app bundle path
 - CLI can patch that app bundle in place
 - CLI can report whether that app is patched
-- CLI can launch Codex and wait until patched infrastructure proves it loaded
+- CLI can launch Codex and wait until patched runtime proves it loaded
 - Codex can invoke synchronous CLI commands later for extension list/update actions
 
 Future versions can add app discovery, patch application, persistent `serve`, extension management UI, and update checks.
@@ -48,7 +48,7 @@ Success output:
 }
 ```
 
-The first implementation uses the repository patcher at `extensions/infrastructure/patch-modified-app.js`.
+The first implementation uses the repository patcher at `extensions/scripts/patch-modified-app.js`.
 
 ### is-patched
 
@@ -76,7 +76,7 @@ This command should only inspect files and metadata. It does not launch Codex an
 
 ### launch
 
-Launches the specified Codex app and waits for patched infrastructure to write a launch probe entry.
+Launches the specified Codex app and waits for patched runtime to write a launch probe entry.
 
 Command:
 
@@ -116,11 +116,11 @@ Phases:
 - `launch`
 - `wait-for-ready`
 
-If Codex launches but patched infrastructure never writes a matching probe entry, return `"launched": true`, `"ready": false`, and `phase: "wait-for-ready"`.
+If Codex launches but patched runtime never writes a matching probe entry, return `"launched": true`, `"ready": false`, and `phase: "wait-for-ready"`.
 
 ## Launch Probe
 
-`launch --wait-for-ready` sets an environment variable that only patched Codex infrastructure understands, launches Codex, waits for a matching probe log entry, then exits.
+`launch --wait-for-ready` sets an environment variable that only patched Codex runtime understands, launches Codex, waits for a matching probe log entry, then exits.
 
 `$CODEX_HOME` means the `CODEX_HOME` environment variable when set, otherwise `$HOME/.codex`.
 
@@ -139,7 +139,7 @@ The CLI launches Codex with:
 
 `BIBLIOTHECA_WAIT_FOR_READY=1`
 
-When patched Codex infrastructure sees this environment variable, it writes `$CODEX_HOME/extensions/.<process.pid>.json` after main-process extension IPC has registered:
+When patched Codex runtime sees this environment variable, it writes `$CODEX_HOME/extensions/.<process.pid>.json` after main-process extension IPC has registered:
 
 ```json
 {

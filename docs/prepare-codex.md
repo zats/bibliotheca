@@ -133,10 +133,10 @@ Target:
 
 `$APP/Contents/Resources/app/webview/index.html`
 
-Copy:
+Copy runtime entry point:
 
 ```
-extensions/infrastructure/webview-extension-loader.js
+extensions/runtime/webview-extension-loader.js
 -> $APP/Contents/Resources/app/webview/codex-extension-loader.js
 ```
 
@@ -186,14 +186,14 @@ Target:
 
 `$APP/Contents/Resources/app/.vite/build/main-*.js`
 
-Copy:
+Copy runtime helper:
 
 ```
-extensions/infrastructure/extension-paths.js
+extensions/runtime/extension-paths.js
 -> $APP/Contents/Resources/app/.vite/build/extension-paths.js
 ```
 
-Append `extensions/infrastructure/main-extension-ipc.js`.
+Append `extensions/runtime/main-extension-ipc.js`.
 
 This registers:
 

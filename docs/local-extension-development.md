@@ -71,7 +71,7 @@ No extension behavior should live only under `$CODEX_HOME/extensions`.
 
 ## App Patch Loop
 
-Use this loop when changing infrastructure or app integration points.
+Use this loop when changing patch-time scripts or runtime extension entry points.
 
 1. Reset modified app from original:
 
@@ -82,9 +82,9 @@ ditto apps/Codex-<version>.original.app apps/Codex-<version>.modified.app
 
 2. Apply the documented prep flow in `docs/prepare-codex.md`.
 
-3. Apply infrastructure from `extensions/infrastructure`.
+3. Run the patcher from `extensions/scripts`.
 
-4. Sync runtime extensions.
+4. The patcher copies runtime entry points from `extensions/runtime` and syncs runtime extensions.
 
 5. Sign and verify.
 
@@ -163,7 +163,7 @@ If an app patch fails after a Codex update:
 
 Keep commits focused:
 
-- app API/infrastructure changes
+- app API/runtime changes
 - extension behavior changes
 - documentation updates
 

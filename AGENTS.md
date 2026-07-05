@@ -22,12 +22,13 @@ Patching is meant to be kept minimal:
 # Layout
 
 - `apps/Codex-<version>.original.app` - original Codex app, must never be modified unless user explicitly overrides this instruction referencing it directly
-- `apps/Codex-<version>.modified.app` - the app we are currently iterating over. Before any extension iteration, delete the existing modified app, duplicate `apps/Codex-<version>.original.app` into `apps/Codex-<version>.modified.app`, then apply app patches from `extensions/infrastructure` and documented patch points.
-- `extensions/infrastructure` where we store minimal generalizable entry points for all extensions allowing to minimize impact on the patches
+- `apps/Codex-<version>.modified.app` - the app we are currently iterating over. Before any extension iteration, delete the existing modified app, duplicate `apps/Codex-<version>.original.app` into `apps/Codex-<version>.modified.app`, then apply app patches from `extensions/scripts` and documented patch points.
+- `extensions/scripts` contains patch-time scripts that modify a Codex app bundle. These scripts do not run inside Codex.
+- `extensions/runtime` contains minimal generalizable entry points copied into the patched Codex app.
 - `extensions/extensions/<extension-id>/src/main.js` is the repository source of truth for each extension. `<extension-id>` must match the extension folder name and be safe for paths. During iteration, sync each extension source into `$CODEX_HOME/extensions/<extension-id>/src/main.js`; do not bundle extension source into `.modified.app`.
 - `docs/apis.md` always up to date public extension API documentation
 - `docs/architecture.md` always up to date extension architecture and design principles
-- `docs/prepare-codex.md` always up to date instructions for turning a clean Codex app into an unpacked, signed app that loads extensions, including target files, exact anchors/search strings, inserted behavior, copied infrastructure files, and update notes
+- `docs/prepare-codex.md` always up to date instructions for turning a clean Codex app into an unpacked, signed app that loads extensions, including target files, exact anchors/search strings, inserted behavior, copied runtime files, and update notes
 
 While original Codex app ships with an .asar package inside, you can read `docs/prepare-codex.md` to understand how we take a freshly downloaded app and make it unpacked, re-signed Electron JS source code that loads extensions.
 
@@ -49,7 +50,7 @@ All UI components that can be reused must be reused
 
 # Architecture principles
 We must minimize invasive changes to the codebase since they will be fragile and the more extensions user builds the more brittle intertwined code dependencies we might introduce
-Before adding helper logic, check for existing infrastructure that can own it. Extract common helpers when behavior repeats or is likely to repeat.
+Before adding helper logic, check for existing shared code that can own it. Extract common helpers when behavior repeats or is likely to repeat.
 Instead we must always look for a way to create minimal incision that becomes a point for this and future extensions to be injected
 An example: we want to add a menu item in the user menu, we should create an extensible system and our plugin should be first implementation loaded from an external file so that later we can leverage integration point for more extensions
 
@@ -58,8 +59,8 @@ We must approach creating extensions as two separate tasks:
 2. Document where when and what is being extended so that
     - We have single centralized extension documentation and any following extension can easily find existing extension APIs
     - We can easily replicate extensions entry points on the new version of Codex and load actual extension relatively easily
-    - Infrastructure (i.e. extension entry points source code) must stay under `extensions/infrastructure` and only then be integrated into the ...modified.app
-    - Any app source patch, anchor change, injected helper, copied infrastructure entry point, or patched target file must be documented in `docs/prepare-codex.md` in the same change with exact anchors/search strings
+    - Runtime extension entry points must stay under `extensions/runtime` and only then be integrated into the ...modified.app by scripts in `extensions/scripts`
+    - Any app source patch, anchor change, injected helper, copied runtime entry point, or patched target file must be documented in `docs/prepare-codex.md` in the same change with exact anchors/search strings
     - Any extension API change must be documented in `docs/apis.md` in the same change
     - Keep API payloads demand-driven; leave Codex internals private until extension source needs a specific field.
     - Specific extension code must stay outside of the app. Repository source lives at `extensions/extensions/<extension-id>/src/main.js`; runtime source lives at `$CODEX_HOME/extensions/<extension-id>/src/main.js`. During development, keep both synced.
