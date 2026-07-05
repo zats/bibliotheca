@@ -43,7 +43,8 @@ Codex does not support extensions, meaning that each one needs to be coded direc
 This also means that every release changes the source code completely and we need to recreate extensions from scratch.
 
 # Design principles
-When building an extension we must explore similar functionality that already exists in Codex
+When building an extension, first exhaustively search the unmodified Codex app source code for all code relevant to how the feature should work, then understand the existing data flow, UI patterns, APIs, state, and side effects before designing patches.
+After understanding the unmodified implementation, find all existing extension points and evaluate whether they are sufficient for the feature. If they are insufficient, prefer extending an existing extension point. Add a new extension point only as a measure of last resort.
 We must not reinvent design language but instead borrow from existing components and mechanics
 All colors picked must work with in-app light/dark mode UI system
 All UI components that can be reused must be reused
@@ -55,7 +56,7 @@ Instead we must always look for a way to create minimal incision that becomes a 
 An example: we want to add a menu item in the user menu, we should create an extensible system and our plugin should be first implementation loaded from an external file so that later we can leverage integration point for more extensions
 
 We must approach creating extensions as two separate tasks:
-1. Find generalizable extension entry points, create minimal integration points with the app itself
+1. Exhaustively understand the relevant unmodified Codex app source, then find generalizable extension entry points, create minimal integration points with the app itself
 2. Document where when and what is being extended so that
     - We have single centralized extension documentation and any following extension can easily find existing extension APIs
     - We can easily replicate extensions entry points on the new version of Codex and load actual extension relatively easily
