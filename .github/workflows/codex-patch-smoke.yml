@@ -250,6 +250,252 @@ jobs:
           echo "status=$STATUS" | tee "$LOG_DIR/is-patched-after.status"
           exit "$STATUS"
 
+      - name: Check patched JavaScript
+        run: |
+          set -euo pipefail
+          CHECK_ROOTS=(
+            "$CODEX_APP_PATH/Contents/Resources/default_app"
+            "$CODEX_APP_PATH/Contents/Resources/app/.vite/build"
+            "$CODEX_APP_PATH/Contents/Resources/app/webview"
+          )
+          : > "$LOG_DIR/node-check.log"
+          : > "$LOG_DIR/node-check.failures"
+          CHECKED=0
+          FAILED=0
+          while IFS= read -r -d '' FILE; do
+            CHECKED=$((CHECKED + 1))
+            if ! node --check "$FILE" >> "$LOG_DIR/node-check.log" 2>&1; then
+              FAILED=$((FAILED + 1))
+              printf '%s\n' "$FILE" >> "$LOG_DIR/node-check.failures"
+            fi
+          done < <(find "${CHECK_ROOTS[@]}" -type f -name '*.js' -print0)
+          {
+            echo "checked=$CHECKED"
+            echo "failed=$FAILED"
+          } | tee "$LOG_DIR/node-check.summary"
+          if [ "$FAILED" -ne 0 ]; then
+            echo "status=1" | tee "$LOG_DIR/node-check.status"
+            cat "$LOG_DIR/node-check.failures" >&2
+            exit 1
+          fi
+          echo "status=0" | tee "$LOG_DIR/node-check.status"
+
+          ESLINT_ROOT="$WORK_DIR/eslint"
+          npm install --prefix "$ESLINT_ROOT" --no-save eslint@latest > "$LOG_DIR/install-eslint.log" 2>&1
+          ESLINT_BIN="$ESLINT_ROOT/node_modules/.bin/eslint"
+          ESLINT_CONFIG="$WORK_DIR/eslint.config.mjs"
+          cat > "$ESLINT_CONFIG" <<'EOF'
+          const globals = Object.fromEntries(
+            [
+              "window",
+              "document",
+              "globalThis",
+              "console",
+              "setTimeout",
+              "clearTimeout",
+              "setInterval",
+              "clearInterval",
+              "requestAnimationFrame",
+              "cancelAnimationFrame",
+              "queueMicrotask",
+              "Blob",
+              "URL",
+              "URLSearchParams",
+              "CustomEvent",
+              "Event",
+              "EventTarget",
+              "KeyboardEvent",
+              "MouseEvent",
+              "PointerEvent",
+              "MutationObserver",
+              "ResizeObserver",
+              "IntersectionObserver",
+              "HTMLElement",
+              "Element",
+              "Node",
+              "SVGElement",
+              "TextEncoder",
+              "TextDecoder",
+              "AbortController",
+              "AbortSignal",
+              "fetch",
+              "Response",
+              "Request",
+              "Headers",
+              "FormData",
+              "File",
+              "FileReader",
+              "FileList",
+              "Image",
+              "ImageData",
+              "Worker",
+              "self",
+              "navigator",
+              "location",
+              "localStorage",
+              "sessionStorage",
+              "performance",
+              "crypto",
+              "indexedDB",
+              "alert",
+              "confirm",
+              "atob",
+              "btoa",
+              "structuredClone",
+              "process",
+              "require",
+              "module",
+              "exports",
+              "__dirname",
+              "__filename",
+              "Buffer",
+              "setImmediate",
+              "clearImmediate",
+              "MessageChannel",
+              "MessagePort",
+              "MessageEvent",
+              "ReadableStream",
+              "ReadableStreamDefaultReader",
+              "WritableStream",
+              "TransformStream",
+              "CompressionStream",
+              "DecompressionStream",
+              "DOMException",
+              "DOMParser",
+              "DOMRect",
+              "DOMMatrix",
+              "getComputedStyle",
+              "HTMLInputElement",
+              "HTMLTextAreaElement",
+              "HTMLCanvasElement",
+              "HTMLImageElement",
+              "HTMLButtonElement",
+              "HTMLDivElement",
+              "HTMLVideoElement",
+              "HTMLAnchorElement",
+              "HTMLIFrameElement",
+              "Notification",
+              "global",
+              "WebAssembly",
+              "CSS",
+              "createImageBitmap",
+              "Path2D",
+              "navigation",
+              "XMLHttpRequest",
+              "Document",
+              "WebSocket",
+              "OffscreenCanvas",
+              "HTMLStyleElement",
+              "NodeFilter",
+              "ShadowRoot",
+              "FontFace",
+              "ImageBitmap",
+              "PerformanceObserver",
+              "WheelEvent",
+              "addEventListener",
+              "ClipboardItem",
+              "Option",
+              "postMessage",
+              "screen",
+              "customElements",
+              "Range",
+              "reportError",
+              "Text",
+              "VideoFrame",
+              "CSSStyleSheet",
+              "XMLSerializer",
+              "caches",
+              "ClipboardEvent",
+              "HTMLLinkElement",
+              "HTMLPreElement",
+              "HTMLTemplateElement",
+              "matchMedia",
+              "MediaRecorder",
+              "print",
+              "prompt",
+              "AudioContext",
+              "cancelIdleCallback",
+              "CSSRule",
+              "DocumentFragment",
+              "getSelection",
+              "Highlight",
+              "HTMLFormElement",
+              "HTMLSelectElement",
+              "innerHeight",
+              "NodeList",
+              "PerformanceEventTiming",
+              "requestIdleCallback",
+              "SVGSVGElement",
+              "WorkerGlobalScope",
+              "WebKitCSSMatrix",
+              "WebKitMutationObserver",
+            ].map((name) => [name, "readonly"]),
+          );
+
+          export default [
+            {
+              files: ["**/*.js"],
+              languageOptions: {
+                ecmaVersion: "latest",
+                sourceType: "module",
+                globals,
+              },
+              rules: {
+                "no-undef": "error",
+              },
+            },
+          ];
+          EOF
+
+          TARGETS="$LOG_DIR/eslint-targets.txt"
+          {
+            printf '%s\n' "$CODEX_APP_PATH/Contents/Resources/default_app/main.js"
+            printf '%s\n' "$CODEX_APP_PATH/Contents/Resources/app/.vite/build/preload.js"
+            printf '%s\n' "$CODEX_APP_PATH/Contents/Resources/app/.vite/build/extension-paths.js"
+            printf '%s\n' "$CODEX_APP_PATH/Contents/Resources/app/webview/codex-extension-loader.js"
+            find "$CODEX_APP_PATH/Contents/Resources/app/.vite/build" -maxdepth 1 -type f -name 'main-*.js' | sort
+            find "$CODEX_APP_PATH/Contents/Resources/app/webview/assets" -maxdepth 1 -type f -name 'thread-overflow-menu-*.js' | sort
+            find "$CODEX_APP_PATH/Contents/Resources/app/webview/assets" -maxdepth 1 -type f -name 'app-initial~app-main~automations-page-*.js' | sort
+            find "$CODEX_APP_PATH/Contents/Resources/app/webview/assets" -maxdepth 1 -type f -name 'login-route-*.js' | sort
+          } > "$TARGETS"
+          if [ "$(wc -l < "$TARGETS" | tr -d ' ')" -ne 8 ]; then
+            echo "Expected 8 ESLint target files:" >&2
+            cat "$TARGETS" >&2
+            exit 1
+          fi
+
+          : > "$LOG_DIR/eslint-no-undef.log"
+          : > "$LOG_DIR/eslint-no-undef.failures"
+          CHECKED=0
+          FAILED=0
+          while IFS= read -r FILE; do
+            CHECKED=$((CHECKED + 1))
+            {
+              echo "## $FILE"
+              "$ESLINT_BIN" \
+                --config "$ESLINT_CONFIG" \
+                --no-ignore \
+                --no-inline-config \
+                --stdin \
+                --stdin-filename checked.js \
+                < "$FILE"
+            } >> "$LOG_DIR/eslint-no-undef.log" 2>&1 || {
+              FAILED=$((FAILED + 1))
+              printf '%s\n' "$FILE" >> "$LOG_DIR/eslint-no-undef.failures"
+            }
+          done < "$TARGETS"
+          {
+            echo "checked=$CHECKED"
+            echo "failed=$FAILED"
+          } | tee "$LOG_DIR/eslint-no-undef.summary"
+          if [ "$FAILED" -ne 0 ]; then
+            echo "status=1" | tee "$LOG_DIR/eslint-no-undef.status"
+            cat "$LOG_DIR/eslint-no-undef.failures" >&2
+            cat "$LOG_DIR/eslint-no-undef.log" >&2
+            exit 1
+          fi
+          echo "status=0" | tee "$LOG_DIR/eslint-no-undef.status"
+
       - name: Launch and wait for ready probe
         run: |
           set +e
@@ -318,6 +564,17 @@ jobs:
               echo "- \`$(basename "$file")\`: \`$(cat "$file")\`"
             done
             echo
+            echo "### JavaScript checks"
+            for file in "$LOG_DIR"/node-check.summary "$LOG_DIR"/eslint-no-undef.summary; do
+              [ -e "$file" ] || continue
+              echo
+              echo "\`$(basename "$file")\`"
+              echo
+              echo '```'
+              cat "$file"
+              echo '```'
+            done
+            echo
             echo "### CLI outputs"
             for file in "$LOG_DIR"/*.json; do
               [ -e "$file" ] || continue
@@ -332,6 +589,12 @@ jobs:
             echo "### Failure guide"
             if [ -f "$LOG_DIR/patch.status" ] && ! grep -qx "status=0" "$LOG_DIR/patch.status"; then
               echo "- Patch failed. Check \`patch.stderr\` and \`patched-app.log\`."
+            fi
+            if [ -f "$LOG_DIR/node-check.status" ] && ! grep -qx "status=0" "$LOG_DIR/node-check.status"; then
+              echo "- JavaScript parse check failed. Check \`node-check.failures\` and \`node-check.log\`."
+            fi
+            if [ -f "$LOG_DIR/eslint-no-undef.status" ] && ! grep -qx "status=0" "$LOG_DIR/eslint-no-undef.status"; then
+              echo "- JavaScript unresolved-symbol check failed. Check \`eslint-no-undef.failures\` and \`eslint-no-undef.log\`."
             fi
             if grep -qi "static-patch-check" "$LOG_DIR/launch.json" 2>/dev/null; then
               echo "- Launch blocked because CLI did not detect patch markers."
