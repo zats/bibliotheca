@@ -1,11 +1,11 @@
 {
-  "latestVersion": "26.623.101652",
-  "publishedRaw": "Fri, 03 Jul 2026 01:26:22 +0000",
-  "publishedAt": "2026-07-03T01:26:22.000Z",
-  "detectedAt": "2026-07-04T20:05:19.882Z",
-  "detectionLagSeconds": 153537,
+  "latestVersion": "26.623.141536",
+  "publishedRaw": "Tue, 07 Jul 2026 00:08:50 +0000",
+  "publishedAt": "2026-07-07T00:08:50Z",
+  "detectedAt": "2026-07-07T00:25:45Z",
+  "detectionLagSeconds": 1015,
+  "issueNumber": 3,
+  "issueOpenedAt": "2026-07-07T00:25:47Z",
   "feedUrl": "https://persistent.oaistatic.com/codex-app-prod/appcast.xml",
-  "downloadUrl": "https://persistent.oaistatic.com/codex-app-prod/Codex-darwin-arm64-26.623.101652.zip",
-  "dispatchedWorkflow": "codex-patch-smoke.yml",
-  "dispatchedAt": "2026-07-04T20:05:19.882Z"
+  "downloadUrl": "https://persistent.oaistatic.com/codex-app-prod/Codex-darwin-arm64-26.623.141536.zip"
 }
