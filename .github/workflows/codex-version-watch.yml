@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: write
   contents: write
   issues: write
 
@@ -88,6 +89,20 @@ jobs:
         run: |
           set -euo pipefail
 
+          dispatch_smoke() {
+            gh workflow run codex-smoke-orchestrator.yml \
+              --repo "$GITHUB_REPOSITORY" \
+              -f issue_number="$1"
+          }
+
+          has_smoke_status() {
+            gh issue view "$1" \
+              --repo "$GITHUB_REPOSITORY" \
+              --json labels \
+              --jq '.labels[].name' \
+              | grep -Eq '^codex-smoke-(running|passed|failed)$'
+          }
+
           recorded_version="$(
             python3 <<'PY'
           import json
@@ -102,9 +117,27 @@ jobs:
           print(state.get("latestVersion", ""))
           PY
           )"
+          recorded_issue_number="$(
+            python3 <<'PY'
+          import json
+          import os
+
+          path = os.environ["STATE_FILE"]
+          try:
+              with open(path, "r", encoding="utf-8") as file:
+                  state = json.load(file)
+          except FileNotFoundError:
+              state = {}
+          print(state.get("issueNumber", ""))
+          PY
+          )"
 
           if [ "$recorded_version" = "$VERSION" ]; then
             echo "Latest version already recorded: ${VERSION}"
+            if [ -n "$recorded_issue_number" ] && ! has_smoke_status "$recorded_issue_number"; then
+              echo "Recorded issue #${recorded_issue_number} has no smoke status; dispatching orchestrator"
+              dispatch_smoke "$recorded_issue_number"
+            fi
             exit 0
           fi
 
@@ -179,6 +212,8 @@ jobs:
           fi
 
           export issue_number issue_opened_at
+
+          dispatch_smoke "$issue_number"
 
           python3 <<'PY'
           import json
