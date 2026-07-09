@@ -4,7 +4,6 @@ interface Env {
   GITHUB_REPO: string;
   GITHUB_BRANCH: string;
   SMOKE_WORKFLOW_ID: string;
-  VERSION_WATCH_STATE: KVNamespace;
 }
 
 interface CheckResult {
@@ -16,7 +15,6 @@ interface CheckResult {
 
 const userAgent = "bibliotheca-codex-version-watch-cloudflare-worker";
 const feedUrl = "https://persistent.oaistatic.com/codex-app-prod/appcast.xml";
-const stateKey = "state";
 const watchLabel = "codex-version-watch";
 const smokeLabels = new Set(["codex-smoke-running", "codex-smoke-passed", "codex-smoke-failed"]);
 
@@ -48,48 +46,29 @@ export default {
 
 async function checkCodexVersion(env: Env): Promise<CheckResult> {
   const latest = await readSparkleFeed();
-  const state = await readState(env);
+  const title = `Codex ${latest.version} available`;
+  const existingIssueNumber = await findIssueByTitle(env, title);
 
-  if (state?.latestVersion === latest.version) {
-    if (state.issueNumber && !(await issueHasSmokeStatus(env, state.issueNumber))) {
-      await dispatchSmoke(env, state.issueNumber);
-      return {
-        changed: false,
-        version: latest.version,
-        issueNumber: state.issueNumber,
-        smokeDispatched: true,
-      };
+  if (existingIssueNumber) {
+    const smokeDispatched = !(await issueHasSmokeStatus(env, existingIssueNumber));
+    if (smokeDispatched) {
+      await dispatchSmoke(env, existingIssueNumber);
     }
-
     return {
       changed: false,
       version: latest.version,
-      issueNumber: state?.issueNumber,
-      smokeDispatched: false,
+      issueNumber: existingIssueNumber,
+      smokeDispatched,
     };
   }
 
   await ensureLabel(env, watchLabel, "0969da", "Issues opened by the Codex version watcher");
 
-  const title = `Codex ${latest.version} available`;
-  const existingIssueNumber = await findIssueByTitle(env, title);
-  const issueNumber = existingIssueNumber ?? (await createIssue(env, title, issueBody(latest, "pending")));
+  const issueNumber = await createIssue(env, title, issueBody(latest, "pending"));
   const issueOpenedAt = await readIssueCreatedAt(env, issueNumber);
 
   await updateIssueBody(env, issueNumber, issueBody(latest, issueOpenedAt));
   await dispatchSmoke(env, issueNumber);
-
-  await writeState(env, {
-    latestVersion: latest.version,
-    publishedRaw: latest.publishedRaw,
-    publishedAt: latest.publishedAt,
-    detectedAt: latest.detectedAt,
-    detectionLagSeconds: latest.detectionLagSeconds,
-    issueNumber,
-    issueOpenedAt,
-    feedUrl,
-    downloadUrl: latest.downloadUrl,
-  });
 
   return {
     changed: true,
@@ -132,14 +111,6 @@ async function readSparkleFeed(): Promise<LatestCodexVersion> {
     detectionLagSeconds: Math.trunc((detected.getTime() - published.getTime()) / 1000),
     downloadUrl,
   };
-}
-
-async function readState(env: Env): Promise<VersionWatchState | null> {
-  return env.VERSION_WATCH_STATE.get<VersionWatchState>(stateKey, "json");
-}
-
-function writeState(env: Env, state: VersionWatchState): Promise<void> {
-  return env.VERSION_WATCH_STATE.put(stateKey, JSON.stringify(state, null, 2));
 }
 
 async function ensureLabel(env: Env, name: string, color: string, description: string): Promise<void> {
@@ -269,17 +240,5 @@ interface LatestCodexVersion {
   publishedAt: string;
   detectedAt: string;
   detectionLagSeconds: number;
-  downloadUrl: string;
-}
-
-interface VersionWatchState {
-  latestVersion: string;
-  publishedRaw: string;
-  publishedAt: string;
-  detectedAt: string;
-  detectionLagSeconds: number;
-  issueNumber: number;
-  issueOpenedAt: string;
-  feedUrl: string;
   downloadUrl: string;
 }

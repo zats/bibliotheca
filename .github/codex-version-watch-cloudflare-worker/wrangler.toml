@@ -8,9 +8,5 @@ GITHUB_REPO = "bibliotheca"
 GITHUB_BRANCH = "main"
 SMOKE_WORKFLOW_ID = "codex-smoke-orchestrator.yml"
 
-[[kv_namespaces]]
-binding = "VERSION_WATCH_STATE"
-id = "c5aa74d6f8fd484194217b18b38b85a1"
-
 [triggers]
 crons = ["*/5 * * * *"]
