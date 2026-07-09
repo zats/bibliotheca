@@ -1,16 +1,14 @@
 # Codex Version Watch Cloudflare Worker
 
-GitHub scheduled workflows can be delayed or skipped. This Worker is an external cron source that dispatches the GitHub version-watch workflow every 5 minutes.
+This Worker checks the Codex Sparkle feed every 5 minutes, stores the last seen version in Workers KV, opens a GitHub issue for new versions, and dispatches the smoke orchestrator.
 
 ## What It Does
 
-1. Dispatches `.github/workflows/codex-version-watch.yml`.
-2. GitHub reads the Sparkle feed.
-3. GitHub opens a `codex-version-watch` issue when a new Codex version appears.
-4. The issue triggers `.github/workflows/codex-smoke-orchestrator.yml`.
-5. The orchestrator runs the patch smoke workflow when the issue matches its conditions.
-
-This keeps Cloudflare as a timer only. GitHub owns version detection, state, issue creation, and patching.
+1. Reads `https://persistent.oaistatic.com/codex-app-prod/appcast.xml`.
+2. Compares the latest version to `VERSION_WATCH_STATE/state` in Workers KV.
+3. Opens or updates a `codex-version-watch` issue for a new version.
+4. Dispatches `.github/workflows/codex-smoke-orchestrator.yml`.
+5. Stores the detected version, issue number, and download URL in KV.
 
 ## Setup
 
@@ -25,9 +23,12 @@ Then configure Cloudflare:
 ```fish
 cd /Users/zats/Developer/Bibliotheca/.github/codex-version-watch-cloudflare-worker
 pnpm install
+pnpm exec wrangler kv namespace create VERSION_WATCH_STATE
 pnpm exec wrangler secret put GITHUB_TOKEN
 pnpm exec wrangler deploy
 ```
+
+After creating the namespace, copy the generated `id` into `wrangler.toml`.
 
 ## Manual Test
 
@@ -40,7 +41,7 @@ curl https://codex-version-watch.<your-subdomain>.workers.dev/check
 Expected result:
 
 ```json
-{"dispatched":true,"workflow":"codex-version-watch.yml"}
+{"changed":false,"version":"26.623.141536","issueNumber":123,"smokeDispatched":false}
 ```
 
 ## Configuration
@@ -51,7 +52,8 @@ Important variables:
 
 - `GITHUB_OWNER`: GitHub owner.
 - `GITHUB_REPO`: GitHub repo.
-- `GITHUB_BRANCH`: branch containing workflows and state.
-- `GITHUB_WORKFLOW_ID`: version-watch workflow file to dispatch.
+- `GITHUB_BRANCH`: branch containing workflows.
+- `SMOKE_WORKFLOW_ID`: smoke orchestrator workflow file to dispatch.
+- `VERSION_WATCH_STATE`: KV namespace binding for version state.
 
 The cron schedule is also in `wrangler.toml`.
