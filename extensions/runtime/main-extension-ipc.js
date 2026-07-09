@@ -1,5 +1,6 @@
 (function () {
-  const { ipcMain } = require("electron");
+  const { BrowserWindow, ipcMain } = require("electron");
+  const crypto = require("crypto");
   const fs = require("fs");
   const os = require("os");
   const path = require("path");
@@ -22,6 +23,23 @@
 
   function sourcePath(extensionId) {
     return path.join(extensionsRoot(), extensionId, "src", "main.js");
+  }
+
+  function authPath() {
+    return path.join(codexHome(), "auth.json");
+  }
+
+  function extensionDataPath(extensionId, relativePath) {
+    assertExtensionId(extensionId);
+    if (typeof relativePath !== "string" || relativePath.trim().length === 0) {
+      throw new Error("Extension data path must be a non-empty string.");
+    }
+    const extensionRoot = path.resolve(extensionsRoot(), extensionId);
+    const resolved = path.resolve(extensionRoot, relativePath);
+    if (resolved !== extensionRoot && !resolved.startsWith(`${extensionRoot}${path.sep}`)) {
+      throw new Error("Extension data path must stay inside the extension directory.");
+    }
+    return resolved;
   }
 
   function packageJsonPath() {
@@ -83,7 +101,7 @@
     await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
     const tempPath = path.join(
       path.dirname(filePath),
-      `.${path.basename(filePath)}.${process.pid}.${Date.now()}.tmp`,
+      `.${path.basename(filePath)}.${process.pid}.${crypto.randomUUID()}.tmp`,
     );
     try {
       await fs.promises.writeFile(tempPath, JSON.stringify(value, null, 2), "utf8");
@@ -108,6 +126,58 @@
   ipcMain.handle("codex_extensions:write-settings", async (_event, extensionId, settings) => {
     assertExtensionId(extensionId);
     await writeJson(settingsPath(extensionId), settings);
+    return true;
+  });
+  ipcMain.handle("codex_extensions:read-data", async (_event, extensionId, relativePath) => {
+    return readJson(extensionDataPath(extensionId, relativePath), null);
+  });
+  ipcMain.handle("codex_extensions:list-data", async (_event, extensionId, relativePath) => {
+    const directoryPath = extensionDataPath(extensionId, relativePath);
+    try {
+      const entries = await fs.promises.readdir(directoryPath, { withFileTypes: true });
+      return entries.map((entry) => ({
+        name: entry.name,
+        type: entry.isDirectory() ? "directory" : "file",
+      }));
+    } catch (error) {
+      if (error.code === "ENOENT") {
+        return [];
+      }
+      throw error;
+    }
+  });
+  ipcMain.handle("codex_extensions:write-data", async (_event, extensionId, relativePath, value) => {
+    await writeJson(extensionDataPath(extensionId, relativePath), value);
+    return true;
+  });
+  ipcMain.handle("codex_extensions:delete-data", async (_event, extensionId, relativePath) => {
+    const filePath = extensionDataPath(extensionId, relativePath);
+    try {
+      await fs.promises.unlink(filePath);
+    } catch (error) {
+      if (error.code !== "ENOENT") {
+        throw error;
+      }
+    }
+    return true;
+  });
+  ipcMain.handle("codex_extensions:read-codex-auth", async () => readJson(authPath(), null));
+  ipcMain.handle("codex_extensions:write-codex-auth", async (_event, auth) => {
+    await writeJson(authPath(), auth);
+    return true;
+  });
+  ipcMain.handle("codex_extensions:remove-codex-auth", async () => {
+    try {
+      await fs.promises.unlink(authPath());
+    } catch (error) {
+      if (error.code !== "ENOENT") {
+        throw error;
+      }
+    }
+    return true;
+  });
+  ipcMain.handle("codex_extensions:reload-window", async (event) => {
+    BrowserWindow.fromWebContents(event.sender)?.reload();
     return true;
   });
   ipcMain.handle("codex_extensions:write-ready-probe", writeReadyProbe);

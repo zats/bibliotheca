@@ -5,8 +5,8 @@ This project adds an extension system to Codex with minimal app changes and exte
 ## Goals
 
 - Keep app patches small and reusable across Codex releases.
-- Put extension business logic outside the app bundle.
-- Prefer general APIs over extension-specific app patches.
+- Put all extension-specific logic in extension source.
+- Prefer general APIs over extension-specific runtime or app patches.
 - Reuse Codex UI primitives and interaction patterns.
 - Keep public extension APIs documented in `docs/apis.md`.
 
@@ -15,8 +15,10 @@ This project adds an extension system to Codex with minimal app changes and exte
 The app should only provide extension entry points:
 
 - bootloader loading enabled extensions
-- host bridge for extension files and settings
+- host bridge for extension files, settings, and generic host capabilities
 - generic UI/API hooks extensions can register against
+
+Runtime and app patches must not contain extension-id-specific APIs, storage layout, account policy, UI decisions, or business logic. Do not add APIs, files, functions, IPC channels, or globals named for a specific extension. If an extension needs host support, add the smallest generic primitive and keep extension-specific implementation in `extensions/extensions/<extension-id>/src/main.js`.
 
 Extension-specific behavior belongs in:
 
@@ -71,9 +73,10 @@ Before adding app patches:
 1. Check whether an existing extension API can support the need.
 2. Prove the required fields by reading the extension code that will consume them.
 3. Generalize the existing API only as far as current extensions require.
-4. Add a new API only when the behavior is genuinely new and used now.
-5. Update `docs/apis.md`.
-6. Update existing extensions to match the API.
+4. Reject extension-specific runtime APIs; use a generic primitive plus extension-owned logic instead.
+5. Add a new API only when the behavior is genuinely new, used now, and generalizable.
+6. Update `docs/apis.md`.
+7. Update existing extensions to match the API.
 
 ## UI Design
 
@@ -82,6 +85,10 @@ Extensions should borrow Codex components and mechanics wherever possible.
 Thread overflow menu additions must use:
 
 `threadMenus`
+
+Profile dropdown additions must use:
+
+`profileMenus`
 
 Header coloring must use:
 

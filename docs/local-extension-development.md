@@ -12,7 +12,7 @@ Humans decide product behavior, visual acceptance, and when a runtime build is g
 Codex agents should:
 
 - keep app patches general and documented
-- keep extension business logic outside the app bundle
+- keep extension-specific logic outside the app bundle and outside `extensions/runtime`
 - sync repository extension source into the runtime extension folder
 - verify behavior with the running app when UI is involved
 - avoid leaving changes only inside `.modified.app`
@@ -42,7 +42,7 @@ The runtime entry point is always `$CODEX_HOME/extensions/<extension-id>/src/mai
 
 ```sh
 CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
-mkdir -p "$CODEX_HOME/extensions/<extension-id>/extensions"
+mkdir -p "$CODEX_HOME/extensions/<extension-id>/src"
 cp extensions/extensions/<extension-id>/src/main.js "$CODEX_HOME/extensions/<extension-id>/src/main.js"
 ```
 
@@ -100,12 +100,14 @@ Before adding a new app patch:
 
 1. Check `docs/apis.md` for an existing API.
 2. Read the extension code that will consume the data.
-3. Add only the fields required by that code.
-4. Generalize an existing API only as far as current extensions require.
-5. Add a new API only when needed now.
-6. Update `docs/apis.md` in the same change.
-7. Update existing extensions to use the changed API.
-8. Update `docs/prepare-codex.md` for any app patch, copied file, or anchor change.
+3. Keep extension-specific data shape, policy, and behavior in `extensions/extensions/<extension-id>/src/main.js`.
+4. Add only generic host capabilities and fields required by that code.
+5. Generalize an existing API only as far as current extensions require.
+6. Reject APIs, IPC channels, files, functions, or globals named for one extension.
+7. Add a new API only when needed now and generalizable.
+8. Update `docs/apis.md` in the same change.
+9. Update existing extensions to use the changed API.
+10. Update `docs/prepare-codex.md` for any app patch, copied file, or anchor change.
 
 ## Verification Checklist
 
@@ -125,6 +127,7 @@ Extension runtime:
 - `$CODEX_HOME/extensions/<extension-id>/src/main.js` exists
 - extension globals live under `window.extensions.<extensionName>`
 - extension data stays under `$CODEX_HOME/extensions/<extension-id>/`
+- extension-specific behavior is absent from `extensions/runtime` and app patches
 
 UI behavior:
 

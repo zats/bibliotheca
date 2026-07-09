@@ -43,6 +43,8 @@ File checks can show likely patch state. Runtime ping/pong is the proof that pat
 
 Patched Codex and the companion app need a minimal local bridge.
 
+The bridge must expose generic extension runtime capabilities only. Extension-specific storage layout, policies, UI behavior, and business logic must stay in extension source, not in patch packs or runtime bridge handlers.
+
 Startup flow:
 
 1. Codex launches and sends `hello`.
@@ -98,6 +100,8 @@ When a clean or stale Codex app is detected, the companion should suggest patchi
 ## Patch Packs
 
 Patch packs are versioned units of patching logic and metadata. A patch pack should declare:
+
+Patch packs may add or update generic extension APIs. They must not add runtime files, app patches, IPC channels, or bridge methods named for one extension.
 
 ```json
 {

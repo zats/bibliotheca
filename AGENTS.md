@@ -8,23 +8,24 @@ Patching is meant to be kept minimal:
     - extensions can be enabled or disabled from the native macOS app (to be developed), so we must keep a general `$CODEX_HOME/extensions/settings.json` with `{<extension-id>:{enabled:Boolean}}`
     - bootstrap must provide a way to get a list of active extensions and no other subsystem should address extensions directly, only a list of known extensions via bootloader discovery
     - the bootloader must create `window.extensions` if it does not exist. Extension globals must live under `window.extensions.<extensionName>`; never add extension objects directly onto `window`.
-- **extension API** - generalizable patches over Codex app source making it extensible so that extension business logic can live in the extension source folders
+- **extension API** - generalizable patches over Codex app source making it extensible. Extension-specific code, data shape, policy, and behavior must live in the extension source folders, never in `extensions/runtime`, app patches, or generic bridge APIs.
     1. **entry points** - should be as small as possible to minimize thrash when we patch it over new Codex versions
     2. **callbacks** - events extensions need to listen to
     3. We must maintain centralized documentation over extension APIs to help future extension developers find existing functionality
     4. If new functionality is required for the extension we must first see if we can modify existing API to make it more generalizable
-    5. Extension APIs, event payloads, and context objects must stay limited to data current extension code actually reads.
-    6. Only as a measure of last resort we should create new API
+    5. Extension APIs, event payloads, and context objects must stay limited to generic data current extension code actually reads.
+    6. Only as a measure of last resort we should create new API, and it must be generalizable rather than named for or shaped around one extension.
     7. Any changes to existing APIs must be documented, no historical context needs to be preserved but documentation must be up to date with the latest state
     8. If API is changed we must go through any existing extensions and modify them to adhere to the updated API
     9. Thread overflow menu additions must use the generic `window.extensions.threadMenus` descriptor API. The app patch provides context and renders descriptors with Codex menu primitives; extension-specific menu logic must stay in the extension.
+    10. Runtime and app patches must not contain extension-id-specific APIs, storage paths, account policies, UI decisions, or business logic. If host support is needed, add the smallest generic primitive and keep the extension-specific implementation in `extensions/extensions/<extension-id>/src/main.js`.
 
 # Layout
 
 - `apps/Codex-<version>.original.app` - original Codex app, must never be modified unless user explicitly overrides this instruction referencing it directly
 - `apps/Codex-<version>.modified.app` - the app we are currently iterating over. Before any extension iteration, delete the existing modified app, duplicate `apps/Codex-<version>.original.app` into `apps/Codex-<version>.modified.app`, then apply app patches from `extensions/scripts` and documented patch points.
 - `extensions/scripts` contains patch-time scripts that modify a Codex app bundle. These scripts do not run inside Codex.
-- `extensions/runtime` contains minimal generalizable entry points copied into the patched Codex app.
+- `extensions/runtime` contains minimal generalizable entry points copied into the patched Codex app. It must not contain code specific to one extension.
 - `extensions/extensions/<extension-id>/src/main.js` is the repository source of truth for each extension. `<extension-id>` must match the extension folder name and be safe for paths. During iteration, sync each extension source into `$CODEX_HOME/extensions/<extension-id>/src/main.js`; do not bundle extension source into `.modified.app`.
 - `docs/apis.md` always up to date public extension API documentation
 - `docs/architecture.md` always up to date extension architecture and design principles
@@ -44,7 +45,7 @@ This also means that every release changes the source code completely and we nee
 
 # Design principles
 When building an extension, first exhaustively search the unmodified Codex app source code for all code relevant to how the feature should work, then understand the existing data flow, UI patterns, APIs, state, and side effects before designing patches.
-After understanding the unmodified implementation, find all existing extension points and evaluate whether they are sufficient for the feature. If they are insufficient, prefer extending an existing extension point. Add a new extension point only as a measure of last resort.
+After understanding the unmodified implementation, find all existing extension points and evaluate whether they are sufficient for the feature. If they are insufficient, prefer extending an existing extension point with a generic API. Add a new extension point only as a measure of last resort, and never make it specific to one extension.
 We must not reinvent design language but instead borrow from existing components and mechanics
 All colors picked must work with in-app light/dark mode UI system
 All UI components that can be reused must be reused
@@ -61,10 +62,11 @@ We must approach creating extensions as two separate tasks:
     - We have single centralized extension documentation and any following extension can easily find existing extension APIs
     - We can easily replicate extensions entry points on the new version of Codex and load actual extension relatively easily
     - Runtime extension entry points must stay under `extensions/runtime` and only then be integrated into the ...modified.app by scripts in `extensions/scripts`
+    - Runtime entry points, app patches, and bridge IPC must be extension-agnostic. Do not add APIs, files, functions, or IPC channels named for a specific extension.
     - Any app source patch, anchor change, injected helper, copied runtime entry point, or patched target file must be documented in `docs/prepare-codex.md` in the same change with exact anchors/search strings
     - Any extension API change must be documented in `docs/apis.md` in the same change
     - Keep API payloads demand-driven; leave Codex internals private until extension source needs a specific field.
-    - Specific extension code must stay outside of the app. Repository source lives at `extensions/extensions/<extension-id>/src/main.js`; runtime source lives at `$CODEX_HOME/extensions/<extension-id>/src/main.js`. During development, keep both synced.
+    - Specific extension code must stay outside of the app and outside `extensions/runtime`. Repository source lives at `extensions/extensions/<extension-id>/src/main.js`; runtime source lives at `$CODEX_HOME/extensions/<extension-id>/src/main.js`. During development, keep both synced.
     - No changes should exist only in the .modified.app since it might get updated and we will lose all progress
 3. All extensions must pick a unique dash-separated identifier name
 4. All extension data should be stored under `$CODEX_HOME/extensions/<extension-id>/` - no data belonging to the extension is allowed to live outside of this folder

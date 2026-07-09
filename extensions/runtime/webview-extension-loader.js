@@ -5,6 +5,11 @@
   namespace.host ??= window.electronBridge?.extensions;
   const threadMenuProviders = new Map();
   const threadMenuListeners = new Set();
+  const profileMenuProviders = new Map();
+  const profileMenuListeners = new Set();
+  const profileBeforeLogoutHandlers = new Map();
+  const loginRouteActionProviders = new Map();
+  const loginRouteActionListeners = new Set();
   const threadChromeProviders = new Map();
   const threadChromeListeners = new Set();
   const threadContextListeners = new Set();
@@ -12,6 +17,7 @@
   const THREAD_CHROME_CONTENT_SELECTOR = "[data-codex-thread-chrome-content]";
   const TOOLBAR_SELECTOR = ".electron\\:h-toolbar, .h-toolbar, .extension\\:h-toolbar-sm";
   let currentThreadContext = null;
+  let activeProfileLoginCancel = null;
   let threadChromeAnimationFrame = null;
   let threadChromeObserver = null;
   let threadChromeResizeObserver = null;
@@ -28,6 +34,20 @@
       listener();
     }
     window.dispatchEvent(new CustomEvent("codex-extension-thread-menu-changed"));
+  }
+
+  function notifyProfileMenusChanged() {
+    for (const listener of profileMenuListeners) {
+      listener();
+    }
+    window.dispatchEvent(new CustomEvent("codex-extension-profile-menu-changed"));
+  }
+
+  function notifyLoginRouteActionsChanged() {
+    for (const listener of loginRouteActionListeners) {
+      listener();
+    }
+    window.dispatchEvent(new CustomEvent("codex-extension-login-route-actions-changed"));
   }
 
   function notifyThreadContextChanged() {
@@ -51,6 +71,13 @@
       return [];
     }
     return items.filter((item) => item && typeof item === "object");
+  }
+
+  function normalizeLoginRouteActions(actions) {
+    if (!Array.isArray(actions)) {
+      return [];
+    }
+    return actions.filter((action) => action && typeof action === "object");
   }
 
   namespace.threadMenus ??= {
@@ -81,6 +108,113 @@
     subscribe(listener) {
       threadMenuListeners.add(listener);
       return () => threadMenuListeners.delete(listener);
+    },
+  };
+
+  namespace.profileMenus ??= {
+    registerProvider(extensionId, provider) {
+      assertExtensionId(extensionId);
+      if (typeof provider !== "function") {
+        throw new Error("Profile menu provider must be a function.");
+      }
+      profileMenuProviders.set(extensionId, provider);
+      notifyProfileMenusChanged();
+      return () => {
+        if (profileMenuProviders.get(extensionId) === provider) {
+          profileMenuProviders.delete(extensionId);
+          notifyProfileMenusChanged();
+        }
+      };
+    },
+    getItems(context) {
+      return Array.from(profileMenuProviders.entries()).flatMap(([extensionId, provider]) => {
+        try {
+          return normalizeMenuItems(provider(context));
+        } catch (error) {
+          console.error(`Profile menu provider failed: ${extensionId}`, error);
+          return [];
+        }
+      });
+    },
+    notifyChanged(extensionId) {
+      assertExtensionId(extensionId);
+      notifyProfileMenusChanged();
+    },
+    subscribe(listener) {
+      profileMenuListeners.add(listener);
+      return () => profileMenuListeners.delete(listener);
+    },
+  };
+
+  namespace.profileAuth ??= {
+    registerBeforeLogoutHandler(extensionId, handler) {
+      assertExtensionId(extensionId);
+      if (typeof handler !== "function") {
+        throw new Error("Profile auth before-logout handler must be a function.");
+      }
+      profileBeforeLogoutHandlers.set(extensionId, handler);
+      return () => {
+        if (profileBeforeLogoutHandlers.get(extensionId) === handler) {
+          profileBeforeLogoutHandlers.delete(extensionId);
+        }
+      };
+    },
+    async handleBeforeLogout(context) {
+      for (const [extensionId, handler] of profileBeforeLogoutHandlers.entries()) {
+        try {
+          if ((await handler(context)) === true) {
+            return true;
+          }
+        } catch (error) {
+          console.error(`Profile auth before-logout handler failed: ${extensionId}`, error);
+        }
+      }
+      return false;
+    },
+    setActiveLoginCancel(cancel) {
+      if (cancel != null && typeof cancel !== "function") {
+        throw new Error("Active profile login cancel handler must be a function.");
+      }
+      activeProfileLoginCancel = cancel;
+    },
+    cancelActiveLogin() {
+      activeProfileLoginCancel?.();
+      activeProfileLoginCancel = null;
+    },
+  };
+
+  namespace.loginRoute ??= {
+    registerActionProvider(extensionId, provider) {
+      assertExtensionId(extensionId);
+      if (typeof provider !== "function") {
+        throw new Error("Login route action provider must be a function.");
+      }
+      loginRouteActionProviders.set(extensionId, provider);
+      notifyLoginRouteActionsChanged();
+      return () => {
+        if (loginRouteActionProviders.get(extensionId) === provider) {
+          loginRouteActionProviders.delete(extensionId);
+          notifyLoginRouteActionsChanged();
+        }
+      };
+    },
+    getActions(context) {
+      return Array.from(loginRouteActionProviders.entries()).flatMap(([extensionId, provider]) => {
+        try {
+          return normalizeLoginRouteActions(provider(context));
+        } catch (error) {
+          console.error(`Login route action provider failed: ${extensionId}`, error);
+          return [];
+        }
+      });
+    },
+    notifyChanged(extensionId) {
+      assertExtensionId(extensionId);
+      notifyLoginRouteActionsChanged();
+    },
+    subscribe(listener) {
+      loginRouteActionListeners.add(listener);
+      return () => loginRouteActionListeners.delete(listener);
     },
   };
 
